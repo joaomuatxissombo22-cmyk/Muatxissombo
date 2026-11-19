@@ -90,3 +90,77 @@ export const REAL_WEBSITE_TEMPLATES: RealWebsiteTemplate[] = [
     ],
   },
 ];
+
+export interface RegisteredDomainPortfolio {
+  domain: string;
+  url: string;
+  organization: string;
+  sector: string;
+  statusLabel: string;
+}
+
+export const REGISTERED_MUATXISSOMBO_DOMAINS: RegisteredDomainPortfolio[] = [
+  {
+    domain: 'muatxissombosolution.online',
+    url: 'https://muatxissombosolution.online',
+    organization: 'Muatxissombo Soluções Digitais',
+    sector: 'Domínio Institucional · E-mail: info@muatxissombosolution.online',
+    statusLabel: 'Domínio Oficial · DNS & E-mail Corporativo',
+  },
+  {
+    domain: 'aris-travel.com',
+    url: 'https://aris-travel.com',
+    organization: 'Aris Travel',
+    sector: 'Agência de Viagens, Turismo & Reservas',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+  {
+    domain: 'sunambiente.com',
+    url: 'https://sunambiente.com',
+    organization: 'SunAmbiente – Soluções Ambientais',
+    sector: 'Consultoria Ambiental & Sustentabilidade · Luanda',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+  {
+    domain: 'academiafg.com',
+    url: 'https://academiafg.com',
+    organization: 'FG Academia de Negócios',
+    sector: 'Formação Executiva, Gestão & Banca · Luanda',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+  {
+    domain: 'chinzalda.com',
+    url: 'https://chinzalda.com',
+    organization: 'CHINZA Lda.',
+    sector: 'Procurement, Supply Chain & Logística Industrial',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+  {
+    domain: 'proamb.pro',
+    url: 'https://proamb.pro',
+    organization: 'PROAMB – Processos Ambientais',
+    sector: 'Engenharia & Consultoria Ambiental · Angola',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+  {
+    domain: 'tallentforge.com',
+    url: 'https://tallentforge.com',
+    organization: 'Talent Forge',
+    sector: 'Recursos Humanos, Recrutamento & Formação · Kilamba',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+  {
+    domain: 'angotour.com',
+    url: 'https://angotour.com',
+    organization: 'AngoTour',
+    sector: 'Turismo, Roteiros & Rent-a-Car em Angola',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+  {
+    domain: 'alhan.pro',
+    url: 'https://alhan.pro',
+    organization: 'ALHAN Consultoria',
+    sector: 'Sistemas de Gestão Integrados (ISO 9001/14001/45001)',
+    statusLabel: 'Cadastrado pela Muatxissombo · SSL Ativo',
+  },
+];

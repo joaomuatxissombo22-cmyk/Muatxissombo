@@ -71,7 +71,10 @@ import {
   WebsiteShowcaseModal,
   WebsiteQuoteFormPayload,
 } from './components/WebsiteShowcaseModal';
-import { REAL_WEBSITE_TEMPLATES } from './data/websiteTemplates';
+import {
+  REAL_WEBSITE_TEMPLATES,
+  REGISTERED_MUATXISSOMBO_DOMAINS,
+} from './data/websiteTemplates';
 import {
   ClientDashboard,
   UserProfileRecord,
@@ -239,12 +242,26 @@ export default function App() {
       title: 'Licenças originais Microsoft 365, antivírus e assistência técnica.',
       subtitle:
         'Fornecimento autorizado Microsoft 365 Personal, Family e Business, proteção ESET, Kaspersky e Bitdefender, e instalação especializada de Windows 10 e 11.',
-      image: '/src/assets/images/service_software_boxes_1795098510071.jpg',
+      image: '/src/assets/images/product_m365_business_1795099172521.jpg',
       badge: 'Software Original & Suporte · Luanda',
       ctaLabel: 'Ver Licenças & Assistência',
       targetSection: 'licencas',
     },
   ];
+
+  const getLicenseImage = (lic: CatalogItemData): string => {
+    if (lic.imageUrl) return lic.imageUrl;
+    const key = `${lic.id} ${lic.name}`.toLowerCase();
+    if (key.includes('kaspersky')) return '/src/assets/images/product_kaspersky_antivirus_1795099172174.jpg';
+    if (key.includes('eset') || key.includes('nod32')) return '/src/assets/images/product_eset_antivirus_1795099172513.jpg';
+    if (key.includes('bitdefender')) return '/src/assets/images/product_bitdefender_antivirus_1795099172687.jpg';
+    if (key.includes('defender')) return '/src/assets/images/product_microsoft_defender_1795099172376.jpg';
+    if (key.includes('business')) return '/src/assets/images/product_m365_business_1795099172521.jpg';
+    if (key.includes('personal') || key.includes('family')) {
+      return '/src/assets/images/product_m365_personal_family_1795099172472.jpg';
+    }
+    return '/src/assets/images/service_software_boxes_1795098510071.jpg';
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -381,7 +398,22 @@ export default function App() {
       doc(db, 'platform_settings', 'main'),
       (snap) => {
         if (snap.exists()) {
-          setPlatformSettings(snap.data() as PlatformSettingsData);
+          const data = snap.data() as PlatformSettingsData;
+          const normalizedEmail =
+            !data.corporateEmail || data.corporateEmail === 'suporte@muatxissombo.ao'
+              ? 'info@muatxissombosolution.online'
+              : data.corporateEmail;
+          const normalizedSender =
+            !data.smtpSenderEmail || data.smtpSenderEmail === 'suporte@muatxissombo.ao'
+              ? 'info@muatxissombosolution.online'
+              : data.smtpSenderEmail;
+          setPlatformSettings({
+            ...DEFAULT_PLATFORM_SETTINGS,
+            ...data,
+            officialDomain: data.officialDomain || 'muatxissombosolution.online',
+            corporateEmail: normalizedEmail,
+            smtpSenderEmail: normalizedSender,
+          });
         }
       },
       () => null
@@ -2354,6 +2386,52 @@ export default function App() {
                   </div>
                 ))}
               </div>
+
+              {/* DOMÍNIOS CADASTRADOS & GERIDOS PELA MUATXISSOMBO */}
+              <div className="pt-8 border-t border-slate-200 space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-semibold text-[#0B5ED7]">
+                      Portfólio de Registos DNS & Clientes Ativos
+                    </div>
+                    <h3 className="text-lg lg:text-xl font-bold text-[#0A192F]">
+                      Domínios Cadastrados e Geridos pela Muatxissombo ({REGISTERED_MUATXISSOMBO_DOMAINS.length})
+                    </h3>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Gestão técnica de DNS, SSL e e-mails corporativos em Angola e internacionais
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {REGISTERED_MUATXISSOMBO_DOMAINS.map((item) => (
+                    <a
+                      key={item.domain}
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group bg-[#F4F7FB] hover:bg-white border border-slate-200 hover:border-[#0B5ED7] rounded-xl p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 text-sm font-bold text-[#0B5ED7] font-mono-tabular truncate">
+                            <Globe className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{item.domain}</span>
+                          </span>
+                          <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0B5ED7] shrink-0 transition-colors" />
+                        </div>
+                        <div className="text-xs font-bold text-[#0A192F]">
+                          {item.organization}
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">{item.sector}</p>
+                      </div>
+                      <div className="pt-2 border-t border-slate-200/80 text-[11px] font-medium text-emerald-700">
+                        {item.statusLabel}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -2535,27 +2613,26 @@ export default function App() {
                       className="group border border-slate-200 rounded-xl overflow-hidden bg-white flex flex-col justify-between transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-lg hover:border-[#0B5ED7]"
                     >
                       <div>
-                        {/* Clean Digital Product Box Visual Header (Uractivation aesthetic) */}
-                        <div className="relative h-40 bg-[#0A192F] overflow-hidden">
+                        {/* Crisp Retail Product Box Studio Photography (Microsoft 365 & Antivirus) */}
+                        <div className="relative h-52 bg-[#F4F7FB] border-b border-slate-200 overflow-hidden">
                           <img
-                            src="/src/assets/images/service_software_boxes_1795098510071.jpg"
+                            src={getLicenseImage(lic)}
                             alt={lic.name}
                             referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500 ease-out"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-[#071426]/95 via-[#071426]/40 to-transparent" />
-                          <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-white">
-                            <div>
-                              <div className="text-[11px] text-[#28A9E0] font-semibold">
-                                {lic.subCategory} · Entrega Digital
-                              </div>
-                              <div className="text-sm font-bold">{lic.name}</div>
-                            </div>
-                            <KeyRound className="w-5 h-5 text-[#28A9E0] shrink-0" />
-                          </div>
                         </div>
 
                         <div className="p-5 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-[#0B5ED7]">
+                              {lic.subCategory} · Entrega Digital por E-mail
+                            </span>
+                            <KeyRound className="w-4 h-4 text-[#0B5ED7] shrink-0" />
+                          </div>
+                          <h3 className="text-base font-bold text-[#0A192F] group-hover:text-[#0B5ED7] transition-colors">
+                            {lic.name}
+                          </h3>
                           <p className="text-xs text-slate-600 leading-relaxed">
                             {lic.description}
                           </p>
@@ -2889,14 +2966,31 @@ export default function App() {
                 </div>
                 <div className="space-y-2 text-xs text-slate-700 pt-2">
                   <div>
-                    <strong>Localização Oficial:</strong> {platformSettings.address}
+                    <strong>Domínio Oficial:</strong>{' '}
+                    <a
+                      href={`https://${platformSettings.officialDomain || 'muatxissombosolution.online'}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#0B5ED7] font-mono-tabular font-semibold hover:underline"
+                    >
+                      {platformSettings.officialDomain || 'muatxissombosolution.online'}
+                    </a>
+                  </div>
+                  <div>
+                    <strong>E-mail Corporativo:</strong>{' '}
+                    <a
+                      href={`mailto:${platformSettings.corporateEmail}`}
+                      className="text-[#0B5ED7] font-semibold hover:underline"
+                    >
+                      {platformSettings.corporateEmail}
+                    </a>
                   </div>
                   <div>
                     <strong>Telefone / WhatsApp Oficial:</strong>{' '}
                     <span className="font-mono-tabular">{platformSettings.phoneWhatsapp}</span>
                   </div>
                   <div>
-                    <strong>E-mail Corporativo:</strong> {platformSettings.corporateEmail}
+                    <strong>Localização Oficial:</strong> {platformSettings.address}
                   </div>
                   <div>
                     <strong>Horário de Atendimento:</strong> {platformSettings.businessHours}
@@ -2977,6 +3071,28 @@ export default function App() {
                       Centralidade do Kilamba, Luanda
                     </h3>
                     <p className="text-xs text-slate-600">{platformSettings.address}</p>
+                    <div className="space-y-1 text-xs text-slate-700 pt-1">
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-3.5 h-3.5 text-[#0B5ED7] shrink-0" />
+                        <a
+                          href={`https://${platformSettings.officialDomain || 'muatxissombosolution.online'}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono-tabular font-semibold text-[#0B5ED7] hover:underline"
+                        >
+                          {platformSettings.officialDomain || 'muatxissombosolution.online'}
+                        </a>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5 text-[#0B5ED7] shrink-0" />
+                        <a
+                          href={`mailto:${platformSettings.corporateEmail}`}
+                          className="font-semibold text-slate-800 hover:text-[#0B5ED7] hover:underline"
+                        >
+                          {platformSettings.corporateEmail}
+                        </a>
+                      </div>
+                    </div>
                     <a
                       href={`https://wa.me/${platformSettings.phoneWhatsapp.replace(/[^0-9]/g, '')}`}
                       target="_blank"
@@ -3037,12 +3153,28 @@ export default function App() {
                   <span>{platformSettings.address}</span>
                 </div>
                 <div className="flex items-center gap-2 font-mono-tabular">
+                  <Globe className="w-4 h-4 text-[#28A9E0] shrink-0" />
+                  <a
+                    href={`https://${platformSettings.officialDomain || 'muatxissombosolution.online'}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-[#28A9E0] transition-colors"
+                  >
+                    {platformSettings.officialDomain || 'muatxissombosolution.online'}
+                  </a>
+                </div>
+                <div className="flex items-center gap-2 font-mono-tabular">
                   <Phone className="w-4 h-4 text-[#28A9E0] shrink-0" />
                   <span>{platformSettings.phoneWhatsapp}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Mail className="w-4 h-4 text-[#28A9E0] shrink-0" />
-                  <span>{platformSettings.corporateEmail}</span>
+                  <a
+                    href={`mailto:${platformSettings.corporateEmail}`}
+                    className="hover:text-[#28A9E0] transition-colors"
+                  >
+                    {platformSettings.corporateEmail}
+                  </a>
                 </div>
               </div>
             </div>

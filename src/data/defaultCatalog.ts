@@ -12,6 +12,7 @@ export interface CatalogItemData {
   validityPeriod?: string;
   devicesCount?: string;
   licenseType?: string;
+  imageUrl?: string;
   available: boolean;
   popular?: boolean;
   promoBadge?: string;
@@ -19,6 +20,7 @@ export interface CatalogItemData {
 
 export interface PlatformSettingsData {
   companyName: string;
+  officialDomain?: string;
   phoneWhatsapp: string;
   address: string;
   corporateEmail: string;
@@ -38,9 +40,10 @@ export interface PlatformSettingsData {
 
 export const DEFAULT_PLATFORM_SETTINGS: PlatformSettingsData = {
   companyName: 'Muatxissombo Soluções Digitais',
+  officialDomain: 'muatxissombosolution.online',
   phoneWhatsapp: '+244 927 496 287',
   address: 'Centralidade do Kilamba, E22, Porta 12, 1.º Andar, Luanda, Angola',
-  corporateEmail: 'suporte@muatxissombo.ao',
+  corporateEmail: 'info@muatxissombosolution.online',
   businessHours: 'Segunda a Sexta: 08h00 – 18h00 · Sábado: 09h00 – 13h00 · Suporte Online 24/7',
   bankName: 'BAI – Banco Angolano de Investimentos',
   iban: 'AO06 0040 0000 0000 0000 0000 0',
@@ -49,7 +52,7 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettingsData = {
   afrimoneyNumber: '+244 927 496 287',
   smtpHost: 'smtp.hostinger.com',
   smtpPort: '465',
-  smtpSenderEmail: 'suporte@muatxissombo.ao',
+  smtpSenderEmail: 'info@muatxissombosolution.online',
   smtpSenderName: 'Muatxissombo Soluções Digitais',
   registrarApiProvider: 'Google Public DNS + Hostinger / DNS.AO',
   registrarApiConfigured: false,
@@ -473,6 +476,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Subscrição Oficial Associada à Conta Microsoft',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '1 Utilizador (Até 5 dispositivos em simultâneo)',
+    imageUrl: '/src/assets/images/product_m365_personal_family_1795099172472.jpg',
     priceKz: 68000,
     billingCycle: 'Anual',
     available: true,
@@ -487,6 +491,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Subscrição Partilhável Original Microsoft',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: 'Até 6 Utilizadores (PC, Mac, Tablet e Telemóvel)',
+    imageUrl: '/src/assets/images/product_m365_personal_family_1795099172472.jpg',
     priceKz: 95000,
     billingCycle: 'Anual',
     available: true,
@@ -501,6 +506,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Licença Corporativa Microsoft CSP',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '1 Utilizador Corporativo',
+    imageUrl: '/src/assets/images/product_m365_business_1795099172521.jpg',
     priceKz: 78000,
     billingCycle: 'Anual por Utilizador',
     available: true,
@@ -514,6 +520,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Licença Corporativa Microsoft CSP',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '1 Utilizador (Até 5 PCs/Macs + 5 Dispositivos Móveis)',
+    imageUrl: '/src/assets/images/product_m365_business_1795099172521.jpg',
     priceKz: 138000,
     billingCycle: 'Anual por Utilizador',
     available: true,
@@ -528,6 +535,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Licença Corporativa Enterprise Security',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '1 Utilizador Corporativo',
+    imageUrl: '/src/assets/images/product_m365_business_1795099172521.jpg',
     priceKz: 215000,
     billingCycle: 'Anual por Utilizador',
     available: true,
@@ -541,6 +549,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Licença Original Microsoft Security',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '1 Utilizador (Até 5 Dispositivos)',
+    imageUrl: '/src/assets/images/product_microsoft_defender_1795099172376.jpg',
     priceKz: 46000,
     billingCycle: 'Anual',
     available: true,
@@ -554,6 +563,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Chave de Ativação Digital Original ESET',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '1 a 3 Dispositivos (Windows / macOS / Android)',
+    imageUrl: '/src/assets/images/product_eset_antivirus_1795099172513.jpg',
     priceKz: 34000,
     billingCycle: 'Anual',
     available: true,
@@ -568,6 +578,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Chave de Ativação Digital Original Kaspersky',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '3 Dispositivos',
+    imageUrl: '/src/assets/images/product_kaspersky_antivirus_1795099172174.jpg',
     priceKz: 39000,
     billingCycle: 'Anual',
     available: true,
@@ -581,6 +592,7 @@ export const INITIAL_CATALOG_ITEMS: CatalogItemData[] = [
     licenseType: 'Chave de Ativação Digital Original Bitdefender',
     validityPeriod: '12 Meses (1 Ano)',
     devicesCount: '5 Dispositivos',
+    imageUrl: '/src/assets/images/product_bitdefender_antivirus_1795099172687.jpg',
     priceKz: 44000,
     billingCycle: 'Anual',
     available: true,
