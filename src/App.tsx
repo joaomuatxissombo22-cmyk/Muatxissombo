@@ -67,7 +67,7 @@ import {
   PlatformSettingsData,
   formatKz,
   normalizeDomainCatalogPrices,
-} from './data/defaultCatalog';
+} from './defaultCatalog';
 import {
   WebsiteShowcaseModal,
   WebsiteQuoteFormPayload,
@@ -75,7 +75,7 @@ import {
 import {
   REAL_WEBSITE_TEMPLATES,
   REGISTERED_MUATXISSOMBO_DOMAINS,
-} from './data/websiteTemplates';
+} from './websiteTemplates';
 import {
   ClientDashboard,
   UserProfileRecord,

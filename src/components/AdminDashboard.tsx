@@ -26,7 +26,7 @@ import {
   CatalogItemData,
   formatKz,
   PlatformSettingsData,
-} from '../data/defaultCatalog';
+} from '../defaultCatalog';
 import {
   UserProfileRecord,
   OrderRecord,

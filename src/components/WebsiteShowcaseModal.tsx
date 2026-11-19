@@ -6,8 +6,8 @@ import {
   ExternalLink,
   X,
 } from 'lucide-react';
-import { CatalogItemData, formatKz } from '../data/defaultCatalog';
-import { REAL_WEBSITE_TEMPLATES } from '../data/websiteTemplates';
+import { CatalogItemData, formatKz } from '../defaultCatalog';
+import { REAL_WEBSITE_TEMPLATES } from '../websiteTemplates';
 
 export interface WebsiteQuoteFormPayload {
   clientName: string;

@@ -21,7 +21,7 @@ import {
   Plus,
   Download,
 } from 'lucide-react';
-import { formatKz, PlatformSettingsData } from '../data/defaultCatalog';
+import { formatKz, PlatformSettingsData } from '../defaultCatalog';
 
 export interface UserProfileRecord {
   uid: string;
