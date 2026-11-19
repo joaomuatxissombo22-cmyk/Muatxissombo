@@ -3,64 +3,53 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer, build as viteBuild } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT_DIR = path.dirname(__filename);
 const DATA_DIR = path.join(ROOT_DIR, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'platform_store.json');
 
-interface StoredAccount {
-  uid: string;
-  username: string;
-  name: string;
-  email: string;
-  phone: string;
-  company: string;
-  nif: string;
-  address: string;
-  role: 'client' | 'admin';
-  status: 'active' | 'suspended';
-  passwordHash: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface PlatformStoreData {
-  accounts: StoredAccount[];
-  orders: Record<string, unknown>[];
-  website_projects: Record<string, unknown>[];
-  licenses_issued: Record<string, unknown>[];
-  domains_registered: Record<string, unknown>[];
-  support_messages: Record<string, unknown>[];
-  notifications: Record<string, unknown>[];
-  feedbacks: Record<string, unknown>[];
-  catalog_items: Record<string, unknown>[];
-  platform_settings: Record<string, unknown> | null;
-}
-
 function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(`muatxissombo_salt_2026:${password}`).digest('hex');
 }
 
-function loadStore(): PlatformStoreData {
+// Cache em memória caso o sistema de ficheiros do servidor esteja em modo leitura
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let memoryStoreCache: any = null;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function saveStore(store: any): void {
+  memoryStoreCache = store;
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+    fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Using in-memory store fallback:', err);
+  }
+}
+
+function loadStore() {
+  try {
     if (fs.existsSync(STORE_FILE)) {
       const raw = fs.readFileSync(STORE_FILE, 'utf-8');
-      const parsed = JSON.parse(raw) as PlatformStoreData;
-      if (Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+        memoryStoreCache = parsed;
         return parsed;
       }
     }
   } catch (err) {
-    console.warn('Initializing fresh platform store:', err);
+    console.warn('Reading store file failed, checking memory cache:', err);
+  }
+
+  if (memoryStoreCache && Array.isArray(memoryStoreCache.accounts)) {
+    return memoryStoreCache;
   }
 
   const now = new Date().toISOString();
-  const initialStore: PlatformStoreData = {
+  const initialStore = {
     accounts: [
       {
         uid: 'admin_muatxissombo',
@@ -93,20 +82,12 @@ function loadStore(): PlatformStoreData {
   return initialStore;
 }
 
-function saveStore(store: PlatformStoreData): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving platform store:', err);
-  }
-}
-
-function sanitizeAccount(acc: StoredAccount) {
-  const { passwordHash: _omitted, ...safe } = acc;
-  return safe;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sanitizeAccount(acc: any) {
+  if (!acc || typeof acc !== 'object') return acc;
+  const copy = { ...acc };
+  delete copy.passwordHash;
+  return copy;
 }
 
 async function ensureProductionBuild(distIndexHtml: string): Promise<boolean> {
@@ -115,59 +96,58 @@ async function ensureProductionBuild(distIndexHtml: string): Promise<boolean> {
   }
   try {
     console.log('Production build not found in dist/. Running Vite build automatically...');
-    await viteBuild({ root: ROOT_DIR });
+    const viteModule = await import('vite');
+    await viteModule.build({ root: ROOT_DIR });
     return fs.existsSync(distIndexHtml);
   } catch (err) {
-    console.error('Automatic Vite build failed, falling back to Vite middleware:', err);
+    console.error('Automatic Vite build failed:', err);
     return false;
   }
 }
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const isAiStudioEnv = process.env.DISABLE_HMR === 'true';
+  const PORT = isAiStudioEnv ? 3000 : Number(process.env.PORT) || 3000;
 
-  // Confiar nos cabeçalhos do proxy reverso (Cloud Run, Hostinger LiteSpeed/Nginx, Cloudflare)
   app.set('trust proxy', true);
 
-  // Redirecionamento permanente HTTP -> HTTPS (301) e prevenção de Conteúdo Misto (Mixed Content)
+  // Redirecionamento permanente HTTP -> HTTPS (301) e cabeçalhos seguros
   app.use((req, res, next) => {
-    const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
-    const hostname = rawHost.split(':')[0].toLowerCase();
-    const isLocalhost =
-      !hostname ||
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname === '0.0.0.0' ||
-      hostname.endsWith('.local');
+    try {
+      const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
+      const hostname = rawHost.split(':')[0].toLowerCase();
+      const isLocalhost =
+        !hostname ||
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '0.0.0.0' ||
+        hostname.endsWith('.local');
 
-    // Ignorar healthcheck interno e ambiente local
-    if (!isLocalhost && req.path !== '/api/health') {
-      const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
-        .split(',')[0]
-        .trim()
-        .toLowerCase();
-      const forwardedSsl = String(req.headers['x-forwarded-ssl'] || '')
-        .trim()
-        .toLowerCase();
-      const cfVisitor = String(req.headers['cf-visitor'] || '');
-      const isHttpFromProxy =
-        forwardedProto === 'http' ||
-        forwardedSsl === 'off' ||
-        cfVisitor.includes('"scheme":"http"');
+      if (!isLocalhost && req.path !== '/api/health') {
+        const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+          .split(',')[0]
+          .trim()
+          .toLowerCase();
+        const forwardedSsl = String(req.headers['x-forwarded-ssl'] || '')
+          .trim()
+          .toLowerCase();
+        const cfVisitor = String(req.headers['cf-visitor'] || '');
+        const isHttpFromProxy =
+          forwardedProto === 'http' ||
+          forwardedSsl === 'off' ||
+          cfVisitor.includes('"scheme":"http"');
 
-      if (isHttpFromProxy) {
-        return res.redirect(301, `https://${rawHost}${req.originalUrl}`);
+        if (isHttpFromProxy && rawHost) {
+          return res.redirect(301, `https://${rawHost}${req.originalUrl}`);
+        }
       }
-    }
 
-    // Cabeçalhos de segurança para evitar bloqueio de conteúdo misto (ecrã branco) e forçar HTTPS
-    if (!isLocalhost) {
-      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-      res.setHeader('Content-Security-Policy', 'upgrade-insecure-requests');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    } catch (_err) {
+      // Continuar mesmo se algum cabeçalho estiver malformado
     }
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
   });
 
@@ -194,11 +174,12 @@ async function startServer() {
     }
 
     const store = loadStore();
-    const exists = store.accounts.find(
-      (a) =>
-        (cleanEmail && a.email.toLowerCase() === cleanEmail) ||
-        (cleanUsername && a.username.toLowerCase() === cleanUsername)
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const exists = store.accounts.find((a: any) => {
+      const aEmail = String(a.email || '').toLowerCase();
+      const aUser = String(a.username || '').toLowerCase();
+      return (cleanEmail && aEmail === cleanEmail) || (cleanUsername && aUser === cleanUsername);
+    });
     if (exists) {
       return res.status(409).json({
         error: 'Já existe uma conta registada com este utilizador ou e-mail. Inicie sessão.',
@@ -209,7 +190,7 @@ async function startServer() {
     const isOwnerAdmin =
       cleanEmail === 'joaomuatxissombo22@gmail.com' ||
       cleanEmail === 'info@muatxissombosolution.online';
-    const newAccount: StoredAccount = {
+    const newAccount = {
       uid: `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       username: cleanUsername || cleanEmail,
       name: String(name || cleanUsername || 'Cliente Muatxissombo').trim().slice(0, 120),
@@ -250,10 +231,11 @@ async function startServer() {
     const store = loadStore();
     const incomingHash = hashPassword(cleanPass);
 
-    const account = store.accounts.find((a) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const account = store.accounts.find((a: any) => {
       const matchId =
-        a.username.toLowerCase() === cleanId ||
-        a.email.toLowerCase() === cleanId ||
+        String(a.username || '').toLowerCase() === cleanId ||
+        String(a.email || '').toLowerCase() === cleanId ||
         (a.role === 'admin' &&
           (cleanId === 'admin' ||
             cleanId === 'muatxissombo' ||
@@ -298,19 +280,20 @@ async function startServer() {
     }
 
     const store = loadStore();
-    const target = store.accounts.find(
-      (a) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const target = store.accounts.find((a: any) => {
+      return (
         (uid && a.uid === uid) ||
         (identifier &&
-          (a.username.toLowerCase() === String(identifier).toLowerCase() ||
-            a.email.toLowerCase() === String(identifier).toLowerCase())) ||
+          (String(a.username || '').toLowerCase() === String(identifier).toLowerCase() ||
+            String(a.email || '').toLowerCase() === String(identifier).toLowerCase())) ||
         (uid === 'admin' && a.role === 'admin')
-    );
+      );
+    });
 
     if (!target) {
-      // If user authenticated via Google/Firebase and wasn't in local store yet, create record
       const now = new Date().toISOString();
-      const created: StoredAccount = {
+      const created = {
         uid: String(uid || `usr_${Date.now()}`),
         username: String(newUsername || identifier || 'utilizador').trim().toLowerCase(),
         name: String(identifier || 'Utilizador Muatxissombo'),
@@ -362,27 +345,33 @@ async function startServer() {
       ok: true,
       success: true,
       users: store.accounts.map(sanitizeAccount),
-      orders: isAdmin || !userId ? store.orders : store.orders.filter((o) => o.userId === userId),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      orders: isAdmin || !userId ? store.orders : store.orders.filter((o: any) => o.userId === userId),
       website_projects:
         isAdmin || !userId
           ? store.website_projects
-          : store.website_projects.filter((p) => p.userId === userId),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : store.website_projects.filter((p: any) => p.userId === userId),
       licenses_issued:
         isAdmin || !userId
           ? store.licenses_issued
-          : store.licenses_issued.filter((l) => l.userId === userId),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : store.licenses_issued.filter((l: any) => l.userId === userId),
       domains_registered:
         isAdmin || !userId
           ? store.domains_registered
-          : store.domains_registered.filter((d) => d.userId === userId),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : store.domains_registered.filter((d: any) => d.userId === userId),
       support_messages:
         isAdmin || !userId
           ? store.support_messages
-          : store.support_messages.filter((m) => m.userId === userId),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : store.support_messages.filter((m: any) => m.userId === userId),
       notifications:
         isAdmin || !userId
           ? store.notifications
-          : store.notifications.filter((n) => n.userId === userId || n.userId === 'admin'),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : store.notifications.filter((n: any) => n.userId === userId || n.userId === 'admin'),
       feedbacks: store.feedbacks,
       catalog_items: store.catalog_items,
       platform_settings: store.platform_settings,
@@ -391,7 +380,7 @@ async function startServer() {
 
   app.post('/api/store/upsert', (req, res) => {
     const body = req.body || {};
-    const collectionName = body.collectionName || body.collection;
+    const collectionName = String(body.collectionName || body.collection || '');
     const idField = body.idField || (collectionName === 'users' ? 'uid' : 'id');
     const record =
       body.record || (body.data ? { ...body.data, [idField]: body.id || body.data[idField] } : null);
@@ -400,10 +389,12 @@ async function startServer() {
 
     if (collectionName === 'users') {
       if (deleteId) {
-        store.accounts = store.accounts.filter((a) => a.uid !== deleteId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        store.accounts = store.accounts.filter((a: any) => a.uid !== deleteId);
       } else if (record && (record.uid || body.id)) {
         const targetUid = record.uid || body.id;
-        const idx = store.accounts.findIndex((a) => a.uid === targetUid);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const idx = store.accounts.findIndex((a: any) => a.uid === targetUid);
         if (idx >= 0) {
           store.accounts[idx] = {
             ...store.accounts[idx],
@@ -450,28 +441,28 @@ async function startServer() {
       'notifications',
       'feedbacks',
       'catalog_items',
-    ] as const;
+    ];
 
-    type AllowedCol = (typeof allowedCollections)[number];
-    if (!allowedCollections.includes(collectionName as AllowedCol)) {
+    if (!allowedCollections.includes(collectionName)) {
       return res.status(400).json({ error: 'Colecção inválida.' });
     }
 
-    const colKey = collectionName as AllowedCol;
-    const list = store[colKey] || [];
+    const list = store[collectionName] || [];
 
     if (deleteId) {
-      store[colKey] = list.filter((item) => item[idField] !== deleteId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      store[collectionName] = list.filter((item: any) => item[idField] !== deleteId);
     } else if (record) {
       const recId = record[idField] || body.id;
       const normalizedRecord = { ...record, [idField]: recId };
-      const idx = list.findIndex((item) => item[idField] === recId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const idx = list.findIndex((item: any) => item[idField] === recId);
       if (idx >= 0) {
         list[idx] = { ...list[idx], ...normalizedRecord };
       } else {
         list.unshift(normalizedRecord);
       }
-      store[colKey] = list;
+      store[collectionName] = list;
     }
 
     saveStore(store);
@@ -488,94 +479,103 @@ async function startServer() {
     }
 
     try {
-      const [nsResp, aResp] = await Promise.all([
-        fetch(`https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=NS`),
-        fetch(`https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=A`),
-      ]);
+      const dnsUrl = `https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=NS`;
+      const dnsResp = await fetch(dnsUrl, {
+        headers: { Accept: 'application/json' },
+      });
 
-      const nsData = (await nsResp.json()) as {
-        Status?: number;
-        Answer?: Array<{ data: string }>;
-        Authority?: Array<{ data: string }>;
-      };
-      const aData = (await aResp.json()) as {
-        Status?: number;
-        Answer?: Array<{ data: string }>;
-      };
-
-      const hasNsRecords = Array.isArray(nsData.Answer) && nsData.Answer.length > 0;
-      const hasARecords = Array.isArray(aData.Answer) && aData.Answer.length > 0;
-      const isNxDomain = nsData.Status === 3 && aData.Status === 3;
-
-      const registrarApiKey = process.env.REGISTRAR_API_KEY;
-      const hasRegistrarApi = Boolean(registrarApiKey && registrarApiKey.length > 5);
-
-      if (hasNsRecords || hasARecords) {
-        return res.json({
-          domain: rawDomain,
-          status: 'registered',
-          verifiedVia: 'Consulta Real DNS / Nameservers (Google Public DNS)',
-          registrarConfigured: hasRegistrarApi,
-          canAddToCart: false,
-          nameservers: nsData.Answer?.map((ans) => ans.data) || [],
-          message: `O domínio ${rawDomain} já possui registos DNS/Nameservers ativos e encontra-se registado.`,
-        });
+      if (!dnsResp.ok) {
+        throw new Error(`DNS gateway HTTP ${dnsResp.status}`);
       }
 
-      if (isNxDomain) {
-        return res.json({
-          domain: rawDomain,
-          status: hasRegistrarApi ? 'available_verified' : 'nxdomain_pending_registrar',
-          verifiedVia: hasRegistrarApi
-            ? 'API Oficial do Registrador + DNS'
-            : 'Consulta Real DNS (NXDOMAIN – Sem Registos Ativos)',
-          registrarConfigured: hasRegistrarApi,
-          canAddToCart: true,
-          nameservers: [],
-          message: hasRegistrarApi
-            ? `Domínio ${rawDomain} verificado como disponível para registo imediato.`
-            : `Consulta DNS real concluída: nenhum registo NS/SOA ativo encontrado para ${rawDomain} (NXDOMAIN). Elegível para pedido de registo sujeito a confirmação final no registrador oficial.`,
-        });
+      const dnsData = await dnsResp.json();
+      const status = dnsData.Status;
+      const hasAnswer = Array.isArray(dnsData.Answer) && dnsData.Answer.length > 0;
+      const hasAuthority = Array.isArray(dnsData.Authority) && dnsData.Authority.length > 0;
+
+      let registered = false;
+      let nameservers: string[] = [];
+
+      if (status === 0 && hasAnswer) {
+        registered = true;
+        nameservers = dnsData.Answer.map((a: { data?: string }) => a.data || '').filter(Boolean);
+      } else if (status === 3) {
+        registered = false;
+      } else {
+        const aResp = await fetch(
+          `https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=A`
+        );
+        const aData = await aResp.json();
+        registered = aData.Status === 0 && Array.isArray(aData.Answer) && aData.Answer.length > 0;
       }
 
       return res.json({
         domain: rawDomain,
-        status: 'unverified_registrar_required',
-        verifiedVia: 'Consulta DNS',
-        registrarConfigured: hasRegistrarApi,
-        canAddToCart: true,
-        nameservers: [],
-        message: `Consulta DNS concluída para ${rawDomain}. A disponibilidade definitiva será validada junto do registrador antes da emissão da fatura.`,
+        available: !registered,
+        registered,
+        nameservers,
+        hasAuthority,
+        checkedAt: new Date().toISOString(),
+        source: 'Google Public DNS (RFC 8484 DoH)',
       });
     } catch (error) {
-      console.error('Erro na consulta real de domínio:', error);
+      console.error('Domain lookup error:', error);
       return res.status(502).json({
-        domain: rawDomain,
-        status: 'lookup_failed',
-        verifiedVia: 'Falha de Rede na Consulta Externa',
-        registrarConfigured: false,
-        canAddToCart: false,
-        message:
-          'Não foi possível contactar o servidor DNS/Registrador em tempo real. Por segurança, não apresentamos disponibilidade simulada.',
+        error: 'Não foi possível consultar o servidor DNS global neste momento.',
       });
     }
   });
 
-  // Transactional Email Dispatch Endpoint (SMTP / PHPMailer Bridge Ready)
+  // Transactional & Operational Email Dispatch Endpoint
   app.post('/api/send-email', async (req, res) => {
-    const { to, subject, eventType, bodyPreview } = req.body || {};
+    const {
+      to,
+      subject,
+      customerName,
+      eventType,
+      orderNumber,
+      summary,
+      details,
+      licenseKey,
+      downloadUrl,
+      replyTo,
+    } = req.body || {};
+
     if (!to || !subject) {
-      return res.status(400).json({ error: 'Destinatário e assunto são obrigatórios.' });
+      return res.status(400).json({ error: 'Destinatário (to) e assunto (subject) são obrigatórios.' });
     }
+
+    const dispatchId = `MAIL-${Date.now().toString(36).toUpperCase()}`;
+    const timestamp = new Date().toISOString();
 
     const smtpConfigured = Boolean(
       process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
     );
+
+    const bodyPreview = [
+      `Olá ${customerName || 'Estimado(a) Cliente'},`,
+      '',
+      `A Muatxissombo Soluções Digitais informa sobre: ${subject}`,
+      orderNumber ? `Referência do Pedido: ${orderNumber}` : '',
+      summary ? `Resumo: ${summary}` : '',
+      details ? `Detalhes: ${details}` : '',
+      licenseKey ? `Chave / Licença Digital Emitida: ${licenseKey}` : '',
+      downloadUrl ? `Link Oficial de Instalação: ${downloadUrl}` : '',
+      '',
+      'Contactos de Suporte:',
+      'Tel / WhatsApp: +244 927 496 287 / 954 900 170',
+      `E-mail: ${replyTo || 'info@muatxissombosolution.online'}`,
+      'Centralidade do Kilamba, E22, Porta 12, 1.º Andar, Luanda - Angola',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     return res.json({
       success: true,
-      smtpConfigured,
-      dispatchedAt: new Date().toISOString(),
+      dispatchId,
+      timestamp,
       recipient: to,
+      subject,
       eventType: eventType || 'Notificação Transacional',
       transportNote: smtpConfigured
         ? `Enviado via servidor SMTP (${process.env.SMTP_HOST})`
@@ -584,9 +584,10 @@ async function startServer() {
     });
   });
 
-  // Dynamic SEO endpoints respecting APP_URL when configured (fallback to official domain)
-  const resolveSeoBaseUrl = (req: express.Request): string => {
-    const envUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
+  // Dynamic SEO endpoints
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resolveSeoBaseUrl = (req: any) => {
+    const envUrl = process.env.APP_URL ? process.env.APP_URL.trim().replace(/\/+$/, '') : '';
     if (envUrl) return envUrl;
     const host = req.get('host');
     if (host && host.includes('muatxissombosolution.online')) {
@@ -659,35 +660,88 @@ async function startServer() {
   const distPath = path.join(ROOT_DIR, 'dist');
   const distIndexHtml = path.join(distPath, 'index.html');
 
+  // Em produção (Hostinger) ou fora do modo dev do AI Studio, servir dist/ diretamente
+  const isAiStudioDev = isAiStudioEnv && process.env.NODE_ENV !== 'production';
   let useStaticDist = false;
-  if (process.env.NODE_ENV === 'production') {
-    useStaticDist = await ensureProductionBuild(distIndexHtml);
+
+  if (!isAiStudioDev) {
+    useStaticDist = fs.existsSync(distIndexHtml);
+    if (!useStaticDist) {
+      useStaticDist = await ensureProductionBuild(distIndexHtml);
+    }
   }
 
-  if (useStaticDist) {
+  if (useStaticDist && fs.existsSync(distIndexHtml)) {
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(distIndexHtml);
     });
   } else {
-    const vitePromise = createViteServer({
-      root: ROOT_DIR,
-      server: { middlewareMode: true, allowedHosts: true },
-      appType: 'spa',
-    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let viteInstancePromise: Promise<any> | null = null;
+    const getVite = async () => {
+      if (!viteInstancePromise) {
+        const viteMod = await import('vite');
+        viteInstancePromise = viteMod.createServer({
+          root: ROOT_DIR,
+          server: { middlewareMode: true, allowedHosts: true },
+          appType: 'spa',
+        });
+      }
+      return viteInstancePromise;
+    };
+
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+    }
 
     app.use(async (req, res, next) => {
       try {
-        const vite = await vitePromise;
+        const vite = await getVite();
         vite.middlewares(req, res, next);
       } catch (err) {
+        console.error('Vite middleware error, falling back to dist/index.html:', err);
+        if (fs.existsSync(distIndexHtml)) {
+          return res.sendFile(distIndexHtml);
+        }
         next(err);
       }
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  // Tratamento global de erros para nunca devolver 500 Internal Server Error em rotas HTML
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('Unhandled server error:', err);
+    if (req.path.startsWith('/api/')) {
+      return res.status(500).json({ ok: false, error: 'Erro interno do servidor.' });
+    }
+    if (fs.existsSync(distIndexHtml)) {
+      return res.sendFile(distIndexHtml);
+    }
+    const rootIndexHtml = path.join(ROOT_DIR, 'index.html');
+    if (fs.existsSync(rootIndexHtml)) {
+      return res.sendFile(rootIndexHtml);
+    }
+    return res
+      .status(200)
+      .send('<!doctype html><html><head><meta http-equiv="refresh" content="0;url=/" /></head><body></body></html>');
+  });
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  server.on('error', (err: any) => {
+    if (err && err.code === 'EADDRINUSE' && PORT !== 3000) {
+      console.warn(`Port ${PORT} in use, falling back to 3000...`);
+      app.listen(3000, '0.0.0.0', () => {
+        console.log('Server running on http://localhost:3000');
+      });
+    } else {
+      console.error('Server listen error:', err);
+    }
   });
 }
 

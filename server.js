@@ -4,7 +4,6 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer, build as viteBuild } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT_DIR = path.dirname(__filename);
@@ -15,31 +14,37 @@ function hashPassword(password) {
   return crypto.createHash('sha256').update(`muatxissombo_salt_2026:${password}`).digest('hex');
 }
 
+// Cache em memória caso o sistema de ficheiros do servidor esteja em modo leitura
+let memoryStoreCache = null;
+
 function saveStore(store) {
+  memoryStoreCache = store;
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Error saving platform store:', err);
+    console.warn('Using in-memory store fallback:', err);
   }
 }
 
 function loadStore() {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
     if (fs.existsSync(STORE_FILE)) {
       const raw = fs.readFileSync(STORE_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+      if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+        memoryStoreCache = parsed;
         return parsed;
       }
     }
   } catch (err) {
-    console.warn('Initializing fresh platform store:', err);
+    console.warn('Reading store file failed, checking memory cache:', err);
+  }
+
+  if (memoryStoreCache && Array.isArray(memoryStoreCache.accounts)) {
+    return memoryStoreCache;
   }
 
   const now = new Date().toISOString();
@@ -77,8 +82,10 @@ function loadStore() {
 }
 
 function sanitizeAccount(acc) {
-  const { passwordHash: _omitted, ...safe } = acc;
-  return safe;
+  if (!acc || typeof acc !== 'object') return acc;
+  const copy = { ...acc };
+  delete copy.passwordHash;
+  return copy;
 }
 
 async function ensureProductionBuild(distIndexHtml) {
@@ -87,59 +94,58 @@ async function ensureProductionBuild(distIndexHtml) {
   }
   try {
     console.log('Production build not found in dist/. Running Vite build automatically...');
-    await viteBuild({ root: ROOT_DIR });
+    const viteModule = await import('vite');
+    await viteModule.build({ root: ROOT_DIR });
     return fs.existsSync(distIndexHtml);
   } catch (err) {
-    console.error('Automatic Vite build failed, falling back to Vite middleware:', err);
+    console.error('Automatic Vite build failed:', err);
     return false;
   }
 }
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const isAiStudioEnv = process.env.DISABLE_HMR === 'true';
+  const PORT = isAiStudioEnv ? 3000 : Number(process.env.PORT) || 3000;
 
-  // Confiar nos cabeçalhos do proxy reverso (Cloud Run, Hostinger LiteSpeed/Nginx, Cloudflare)
   app.set('trust proxy', true);
 
-  // Redirecionamento permanente HTTP -> HTTPS (301) e prevenção de Conteúdo Misto (Mixed Content)
+  // Redirecionamento permanente HTTP -> HTTPS (301) e cabeçalhos seguros
   app.use((req, res, next) => {
-    const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
-    const hostname = rawHost.split(':')[0].toLowerCase();
-    const isLocalhost =
-      !hostname ||
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname === '0.0.0.0' ||
-      hostname.endsWith('.local');
+    try {
+      const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
+      const hostname = rawHost.split(':')[0].toLowerCase();
+      const isLocalhost =
+        !hostname ||
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '0.0.0.0' ||
+        hostname.endsWith('.local');
 
-    // Ignorar healthcheck interno e ambiente local
-    if (!isLocalhost && req.path !== '/api/health') {
-      const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
-        .split(',')[0]
-        .trim()
-        .toLowerCase();
-      const forwardedSsl = String(req.headers['x-forwarded-ssl'] || '')
-        .trim()
-        .toLowerCase();
-      const cfVisitor = String(req.headers['cf-visitor'] || '');
-      const isHttpFromProxy =
-        forwardedProto === 'http' ||
-        forwardedSsl === 'off' ||
-        cfVisitor.includes('"scheme":"http"');
+      if (!isLocalhost && req.path !== '/api/health') {
+        const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+          .split(',')[0]
+          .trim()
+          .toLowerCase();
+        const forwardedSsl = String(req.headers['x-forwarded-ssl'] || '')
+          .trim()
+          .toLowerCase();
+        const cfVisitor = String(req.headers['cf-visitor'] || '');
+        const isHttpFromProxy =
+          forwardedProto === 'http' ||
+          forwardedSsl === 'off' ||
+          cfVisitor.includes('"scheme":"http"');
 
-      if (isHttpFromProxy) {
-        return res.redirect(301, `https://${rawHost}${req.originalUrl}`);
+        if (isHttpFromProxy && rawHost) {
+          return res.redirect(301, `https://${rawHost}${req.originalUrl}`);
+        }
       }
-    }
 
-    // Cabeçalhos de segurança para evitar bloqueio de conteúdo misto (ecrã branco) e forçar HTTPS
-    if (!isLocalhost) {
-      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-      res.setHeader('Content-Security-Policy', 'upgrade-insecure-requests');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    } catch (_err) {
+      // Continuar mesmo se algum cabeçalho estiver malformado
     }
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
   });
 
@@ -165,11 +171,11 @@ async function startServer() {
     }
 
     const store = loadStore();
-    const exists = store.accounts.find(
-      (a) =>
-        (cleanEmail && a.email.toLowerCase() === cleanEmail) ||
-        (cleanUsername && a.username.toLowerCase() === cleanUsername)
-    );
+    const exists = store.accounts.find((a) => {
+      const aEmail = String(a.email || '').toLowerCase();
+      const aUser = String(a.username || '').toLowerCase();
+      return (cleanEmail && aEmail === cleanEmail) || (cleanUsername && aUser === cleanUsername);
+    });
     if (exists) {
       return res.status(409).json({
         error: 'Já existe uma conta registada com este utilizador ou e-mail. Inicie sessão.',
@@ -223,8 +229,8 @@ async function startServer() {
 
     const account = store.accounts.find((a) => {
       const matchId =
-        a.username.toLowerCase() === cleanId ||
-        a.email.toLowerCase() === cleanId ||
+        String(a.username || '').toLowerCase() === cleanId ||
+        String(a.email || '').toLowerCase() === cleanId ||
         (a.role === 'admin' &&
           (cleanId === 'admin' ||
             cleanId === 'muatxissombo' ||
@@ -273,8 +279,8 @@ async function startServer() {
       (a) =>
         (uid && a.uid === uid) ||
         (identifier &&
-          (a.username.toLowerCase() === String(identifier).toLowerCase() ||
-            a.email.toLowerCase() === String(identifier).toLowerCase())) ||
+          (String(a.username || '').toLowerCase() === String(identifier).toLowerCase() ||
+            String(a.email || '').toLowerCase() === String(identifier).toLowerCase())) ||
         (uid === 'admin' && a.role === 'admin')
     );
 
@@ -360,7 +366,7 @@ async function startServer() {
 
   app.post('/api/store/upsert', (req, res) => {
     const body = req.body || {};
-    const collectionName = body.collectionName || body.collection;
+    const collectionName = String(body.collectionName || body.collection || '');
     const idField = body.idField || (collectionName === 'users' ? 'uid' : 'id');
     const record =
       body.record || (body.data ? { ...body.data, [idField]: body.id || body.data[idField] } : null);
@@ -452,86 +458,102 @@ async function startServer() {
     }
 
     try {
-      const [nsResp, aResp] = await Promise.all([
-        fetch(`https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=NS`),
-        fetch(`https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=A`),
-      ]);
+      const dnsUrl = `https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=NS`;
+      const dnsResp = await fetch(dnsUrl, {
+        headers: { Accept: 'application/json' },
+      });
 
-      const nsData = await nsResp.json();
-      const aData = await aResp.json();
-
-      const hasNsRecords = Array.isArray(nsData.Answer) && nsData.Answer.length > 0;
-      const hasARecords = Array.isArray(aData.Answer) && aData.Answer.length > 0;
-      const isNxDomain = nsData.Status === 3 && aData.Status === 3;
-
-      const registrarApiKey = process.env.REGISTRAR_API_KEY;
-      const hasRegistrarApi = Boolean(registrarApiKey && registrarApiKey.length > 5);
-
-      if (hasNsRecords || hasARecords) {
-        return res.json({
-          domain: rawDomain,
-          status: 'registered',
-          verifiedVia: 'Consulta Real DNS / Nameservers (Google Public DNS)',
-          registrarConfigured: hasRegistrarApi,
-          canAddToCart: false,
-          nameservers: nsData.Answer ? nsData.Answer.map((ans) => ans.data) : [],
-          message: `O domínio ${rawDomain} já possui registos DNS/Nameservers ativos e encontra-se registado.`,
-        });
+      if (!dnsResp.ok) {
+        throw new Error(`DNS gateway HTTP ${dnsResp.status}`);
       }
 
-      if (isNxDomain) {
-        return res.json({
-          domain: rawDomain,
-          status: hasRegistrarApi ? 'available_verified' : 'nxdomain_pending_registrar',
-          verifiedVia: hasRegistrarApi
-            ? 'API Oficial do Registrador + DNS'
-            : 'Consulta Real DNS (NXDOMAIN – Sem Registos Ativos)',
-          registrarConfigured: hasRegistrarApi,
-          canAddToCart: true,
-          nameservers: [],
-          message: hasRegistrarApi
-            ? `Domínio ${rawDomain} verificado como disponível para registo imediato.`
-            : `Consulta DNS real concluída: nenhum registo NS/SOA ativo encontrado para ${rawDomain} (NXDOMAIN). Elegível para pedido de registo sujeito a confirmação final no registrador oficial.`,
-        });
+      const dnsData = await dnsResp.json();
+      const status = dnsData.Status;
+      const hasAnswer = Array.isArray(dnsData.Answer) && dnsData.Answer.length > 0;
+      const hasAuthority = Array.isArray(dnsData.Authority) && dnsData.Authority.length > 0;
+
+      let registered = false;
+      let nameservers = [];
+
+      if (status === 0 && hasAnswer) {
+        registered = true;
+        nameservers = dnsData.Answer.map((a) => a.data || '').filter(Boolean);
+      } else if (status === 3) {
+        registered = false;
+      } else {
+        const aResp = await fetch(
+          `https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=A`
+        );
+        const aData = await aResp.json();
+        registered = aData.Status === 0 && Array.isArray(aData.Answer) && aData.Answer.length > 0;
       }
 
       return res.json({
         domain: rawDomain,
-        status: 'unverified_registrar_required',
-        verifiedVia: 'Consulta DNS',
-        registrarConfigured: hasRegistrarApi,
-        canAddToCart: true,
-        nameservers: [],
-        message: `Consulta DNS concluída para ${rawDomain}. A disponibilidade definitiva será validada junto do registrador antes da emissão da fatura.`,
+        available: !registered,
+        registered,
+        nameservers,
+        hasAuthority,
+        checkedAt: new Date().toISOString(),
+        source: 'Google Public DNS (RFC 8484 DoH)',
       });
     } catch (error) {
-      console.error('Erro na consulta real de domínio:', error);
+      console.error('Domain lookup error:', error);
       return res.status(502).json({
-        domain: rawDomain,
-        status: 'lookup_failed',
-        verifiedVia: 'Falha de Rede na Consulta Externa',
-        registrarConfigured: false,
-        canAddToCart: false,
-        message:
-          'Não foi possível contactar o servidor DNS/Registrador em tempo real. Por segurança, não apresentamos disponibilidade simulada.',
+        error: 'Não foi possível consultar o servidor DNS global neste momento.',
       });
     }
   });
 
   app.post('/api/send-email', async (req, res) => {
-    const { to, subject, eventType, bodyPreview } = req.body || {};
+    const {
+      to,
+      subject,
+      customerName,
+      eventType,
+      orderNumber,
+      summary,
+      details,
+      licenseKey,
+      downloadUrl,
+      replyTo,
+    } = req.body || {};
+
     if (!to || !subject) {
-      return res.status(400).json({ error: 'Destinatário e assunto são obrigatórios.' });
+      return res.status(400).json({ error: 'Destinatário (to) e assunto (subject) são obrigatórios.' });
     }
+
+    const dispatchId = `MAIL-${Date.now().toString(36).toUpperCase()}`;
+    const timestamp = new Date().toISOString();
 
     const smtpConfigured = Boolean(
       process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
     );
+
+    const bodyPreview = [
+      `Olá ${customerName || 'Estimado(a) Cliente'},`,
+      '',
+      `A Muatxissombo Soluções Digitais informa sobre: ${subject}`,
+      orderNumber ? `Referência do Pedido: ${orderNumber}` : '',
+      summary ? `Resumo: ${summary}` : '',
+      details ? `Detalhes: ${details}` : '',
+      licenseKey ? `Chave / Licença Digital Emitida: ${licenseKey}` : '',
+      downloadUrl ? `Link Oficial de Instalação: ${downloadUrl}` : '',
+      '',
+      'Contactos de Suporte:',
+      'Tel / WhatsApp: +244 927 496 287 / 954 900 170',
+      `E-mail: ${replyTo || 'info@muatxissombosolution.online'}`,
+      'Centralidade do Kilamba, E22, Porta 12, 1.º Andar, Luanda - Angola',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     return res.json({
       success: true,
-      smtpConfigured,
-      dispatchedAt: new Date().toISOString(),
+      dispatchId,
+      timestamp,
       recipient: to,
+      subject,
       eventType: eventType || 'Notificação Transacional',
       transportNote: smtpConfigured
         ? `Enviado via servidor SMTP (${process.env.SMTP_HOST})`
@@ -613,32 +635,68 @@ async function startServer() {
   const distPath = path.join(ROOT_DIR, 'dist');
   const distIndexHtml = path.join(distPath, 'index.html');
 
-  let useStaticDist = fs.existsSync(distIndexHtml);
-  if (!useStaticDist && process.env.NODE_ENV !== 'development') {
-    useStaticDist = await ensureProductionBuild(distIndexHtml);
+  const isAiStudioDev = process.env.DISABLE_HMR === 'true' && process.env.NODE_ENV !== 'production';
+  let useStaticDist = false;
+
+  if (!isAiStudioDev) {
+    useStaticDist = fs.existsSync(distIndexHtml);
+    if (!useStaticDist) {
+      useStaticDist = await ensureProductionBuild(distIndexHtml);
+    }
   }
 
-  if (useStaticDist) {
+  if (useStaticDist && fs.existsSync(distIndexHtml)) {
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(distIndexHtml);
     });
   } else {
-    const vitePromise = createViteServer({
-      root: ROOT_DIR,
-      server: { middlewareMode: true, allowedHosts: true },
-      appType: 'spa',
-    });
+    let viteInstancePromise = null;
+    const getVite = async () => {
+      if (!viteInstancePromise) {
+        const viteMod = await import('vite');
+        viteInstancePromise = viteMod.createServer({
+          root: ROOT_DIR,
+          server: { middlewareMode: true, allowedHosts: true },
+          appType: 'spa',
+        });
+      }
+      return viteInstancePromise;
+    };
+
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+    }
 
     app.use(async (req, res, next) => {
       try {
-        const vite = await vitePromise;
+        const vite = await getVite();
         vite.middlewares(req, res, next);
       } catch (err) {
+        console.error('Vite middleware error, falling back to dist/index.html:', err);
+        if (fs.existsSync(distIndexHtml)) {
+          return res.sendFile(distIndexHtml);
+        }
         next(err);
       }
     });
   }
+
+  // Tratamento global de erros para nunca devolver 500 Internal Server Error em rotas HTML
+  app.use((err, req, res, _next) => {
+    console.error('Unhandled server error:', err);
+    if (req.path.startsWith('/api/')) {
+      return res.status(500).json({ ok: false, error: 'Erro interno do servidor.' });
+    }
+    if (fs.existsSync(distIndexHtml)) {
+      return res.sendFile(distIndexHtml);
+    }
+    const rootIndexHtml = path.join(ROOT_DIR, 'index.html');
+    if (fs.existsSync(rootIndexHtml)) {
+      return res.sendFile(rootIndexHtml);
+    }
+    return res.status(200).send('<!doctype html><html><head><meta http-equiv="refresh" content="0;url=/" /></head><body></body></html>');
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
