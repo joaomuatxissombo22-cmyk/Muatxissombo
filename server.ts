@@ -117,6 +117,68 @@ async function startServer() {
     });
   });
 
+  // Dynamic SEO endpoints respecting APP_URL when configured (fallback to official domain)
+  const resolveSeoBaseUrl = (req: express.Request): string => {
+    const envUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
+    if (envUrl) return envUrl;
+    const host = req.get('host');
+    if (host && host.includes('muatxissombosolution.online')) {
+      return `https://${host}`;
+    }
+    return 'https://muatxissombosolution.online';
+  };
+
+  app.get('/robots.txt', (req, res) => {
+    const baseUrl = resolveSeoBaseUrl(req);
+    res.type('text/plain').send(
+      [
+        'User-agent: *',
+        'Allow: /',
+        'Disallow: /admin',
+        'Disallow: /cliente',
+        'Disallow: /api/',
+        '',
+        `Sitemap: ${baseUrl}/sitemap.xml`,
+        '',
+      ].join('\n')
+    );
+  });
+
+  app.get('/sitemap.xml', (req, res) => {
+    const baseUrl = resolveSeoBaseUrl(req);
+    const entries = [
+      { loc: `${baseUrl}/`, changefreq: 'daily', priority: '1.0' },
+      { loc: `${baseUrl}/?section=criacao-sites`, changefreq: 'weekly', priority: '0.95' },
+      { loc: `${baseUrl}/?section=dominios`, changefreq: 'weekly', priority: '0.90' },
+      { loc: `${baseUrl}/?section=hospedagem`, changefreq: 'weekly', priority: '0.85' },
+      { loc: `${baseUrl}/?section=licencas`, changefreq: 'weekly', priority: '0.85' },
+      { loc: `${baseUrl}/?section=assistencia`, changefreq: 'weekly', priority: '0.80' },
+      { loc: `${baseUrl}/?section=sobre`, changefreq: 'monthly', priority: '0.70' },
+      { loc: `${baseUrl}/?section=contactos`, changefreq: 'monthly', priority: '0.75' },
+    ];
+    const urlNodes = entries
+      .map(
+        (entry, idx) => `  <url>
+    <loc>${entry.loc}</loc>${
+      idx === 0
+        ? `
+    <xhtml:link rel="alternate" hreflang="pt-AO" href="${baseUrl}/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="${baseUrl}/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="${baseUrl}/" />`
+        : ''
+    }
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>${entry.changefreq}</changefreq>
+    <priority>${entry.priority}</priority>
+  </url>`
+      )
+      .join('\n');
+
+    res.type('application/xml').send(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset\n  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n  xmlns:xhtml="http://www.w3.org/1999/xhtml"\n>\n${urlNodes}\n</urlset>\n`
+    );
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vitePromise = createViteServer({
       server: { middlewareMode: true },

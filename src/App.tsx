@@ -87,6 +87,7 @@ import {
 } from './components/ClientDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { TestimonialsCarousel } from './components/TestimonialsCarousel';
+import { applyPageSeo, SeoRouteKey } from './lib/seo';
 
 interface CartItem {
   id: string;
@@ -209,12 +210,50 @@ export default function App() {
 
   // Dynamic Hero Slide State
   const [heroSlide, setHeroSlide] = useState<0 | 1 | 2>(0);
+  const [activeSectionSeo, setActiveSectionSeo] = useState<SeoRouteKey>('inicio');
 
   useEffect(() => {
     const timer = setInterval(() => {
       setHeroSlide((prev) => ((prev + 1) % 3) as 0 | 1 | 2);
     }, 6500);
     return () => clearInterval(timer);
+  }, []);
+
+  // Synchronize SEO metadata on active view or section change
+  useEffect(() => {
+    if (activeView === 'client' || activeView === 'admin' || activeView === 'auth') {
+      applyPageSeo(activeView);
+    } else {
+      applyPageSeo(activeSectionSeo);
+    }
+  }, [activeView, activeSectionSeo]);
+
+  // Support SEO deep links (?section=dominios&q=empresa.ao) on initial load
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const section = params.get('section') as SeoRouteKey | null;
+    const q = params.get('q');
+    if (q) {
+      setDomainInput(q);
+    }
+    const validSections: SeoRouteKey[] = [
+      'inicio',
+      'criacao-sites',
+      'dominios',
+      'hospedagem',
+      'licencas',
+      'assistencia',
+      'sobre',
+      'contactos',
+    ];
+    if (section && validSections.includes(section)) {
+      setActiveSectionSeo(section);
+      setTimeout(() => {
+        const el = document.getElementById(section);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 250);
+    }
   }, []);
 
   const HERO_SLIDES = [
@@ -634,6 +673,15 @@ export default function App() {
   const navigateToSection = (sectionId: string) => {
     setActiveView('public');
     setMobileMenuOpen(false);
+    const seoKey = sectionId as SeoRouteKey;
+    setActiveSectionSeo(seoKey);
+    if (typeof window !== 'undefined') {
+      const nextUrl =
+        sectionId === 'inicio'
+          ? window.location.pathname
+          : `${window.location.pathname}?section=${encodeURIComponent(sectionId)}`;
+      window.history.replaceState(null, '', nextUrl);
+    }
     setTimeout(() => {
       const el = document.getElementById(sectionId);
       if (el) el.scrollIntoView({ behavior: 'smooth' });

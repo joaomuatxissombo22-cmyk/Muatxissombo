@@ -2,5 +2,6 @@ User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /cliente
+Disallow: /api/
 
-Sitemap: https://muatxissombo.ao/sitemap.xml
+Sitemap: https://muatxissombosolution.online/sitemap.xml

@@ -1,42 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml"
+>
   <url>
-    <loc>https://muatxissombo.ao/</loc>
+    <loc>https://muatxissombosolution.online/</loc>
+    <xhtml:link rel="alternate" hreflang="pt-AO" href="https://muatxissombosolution.online/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://muatxissombosolution.online/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://muatxissombosolution.online/" />
+    <lastmod>2026-11-19</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://muatxissombo.ao/?section=websites</loc>
+    <loc>https://muatxissombosolution.online/?section=criacao-sites</loc>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.95</priority>
   </url>
   <url>
-    <loc>https://muatxissombo.ao/?section=dominios</loc>
+    <loc>https://muatxissombosolution.online/?section=dominios</loc>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
-    <loc>https://muatxissombo.ao/?section=hospedagem</loc>
+    <loc>https://muatxissombosolution.online/?section=hospedagem</loc>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://muatxissombo.ao/?section=licencas</loc>
+    <loc>https://muatxissombosolution.online/?section=licencas</loc>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
-    <loc>https://muatxissombo.ao/?section=assistencia</loc>
+    <loc>https://muatxissombosolution.online/?section=assistencia</loc>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.80</priority>
   </url>
   <url>
-    <loc>https://muatxissombo.ao/?section=sobre</loc>
+    <loc>https://muatxissombosolution.online/?section=sobre</loc>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.70</priority>
   </url>
   <url>
-    <loc>https://muatxissombo.ao/?section=contactos</loc>
+    <loc>https://muatxissombosolution.online/?section=contactos</loc>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.75</priority>
   </url>
