@@ -18,6 +18,9 @@ import {
   RefreshCw,
   LogOut,
   Server,
+  Lock,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import {
   CatalogItemData,
@@ -75,6 +78,16 @@ interface AdminDashboardProps {
   ) => Promise<void>;
   onResendNotification: (notification: NotificationItemRecord) => Promise<void>;
   onSavePlatformSettings: (settings: PlatformSettingsData) => Promise<void>;
+  onChangeAdminPassword: (
+    currentPassword: string,
+    newPassword: string,
+    newUsername?: string
+  ) => Promise<void>;
+  onResetClientPassword?: (
+    uid: string,
+    identifier: string,
+    newPassword: string
+  ) => Promise<void>;
   onLogout: () => void;
 }
 
@@ -134,10 +147,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onReplySupportMessage,
   onResendNotification,
   onSavePlatformSettings,
+  onChangeAdminPassword,
+  onResetClientPassword,
   onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('encomendas');
   const [bannerMsg, setBannerMsg] = useState('');
+
+  // Admin password & username change state
+  const [adminUsername, setAdminUsername] = useState(
+    adminProfile.username || 'admin'
+  );
+  const [adminCurrentPass, setAdminCurrentPass] = useState('');
+  const [adminNewPass, setAdminNewPass] = useState('');
+  const [adminConfirmPass, setAdminConfirmPass] = useState('');
+  const [adminPassError, setAdminPassError] = useState('');
+  const [adminPassSaving, setAdminPassSaving] = useState(false);
+
+  // Client direct password reset modal/inline state
+  const [resetClientUid, setResetClientUid] = useState<string | null>(null);
+  const [resetClientNewPass, setResetClientNewPass] = useState('');
 
   // Catalog form state
   const [editingItem, setEditingItem] = useState<CatalogItemData>({
@@ -332,7 +361,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </nav>
         </div>
 
-        <div className="pt-4 mt-6 border-t border-slate-800">
+        <div className="pt-4 mt-6 border-t border-slate-800 space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('configuracoes');
+              setBannerMsg('');
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold text-[#28A9E0] bg-slate-800/80 hover:bg-slate-800 rounded-lg transition-colors"
+          >
+            <Lock className="w-4 h-4" />
+            <span>Alterar Senha & Links</span>
+          </button>
           <button
             type="button"
             onClick={onLogout}
@@ -826,6 +866,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                         <button
                           type="button"
+                          onClick={() => {
+                            setResetClientUid(resetClientUid === u.uid ? null : u.uid);
+                            setResetClientNewPass('');
+                          }}
+                          className="px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 font-medium rounded-lg hover:bg-amber-100"
+                        >
+                          Alterar Senha do Cliente
+                        </button>
+                        <button
+                          type="button"
                           onClick={async () => {
                             await onSendPasswordReset(u.email);
                             setBannerMsg(
@@ -834,9 +884,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           }}
                           className="px-3 py-1.5 bg-blue-50 text-[#0B5ED7] font-medium rounded-lg hover:bg-blue-100"
                         >
-                          Redefinir Credenciais (E-mail)
+                          Notificar E-mail
                         </button>
                       </div>
+                      {resetClientUid === u.uid && onResetClientPassword && (
+                        <div className="w-full md:basis-full pt-3 mt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                          <input
+                            type="password"
+                            minLength={6}
+                            value={resetClientNewPass}
+                            onChange={(e) => setResetClientNewPass(e.target.value)}
+                            placeholder="Nova senha para o cliente (mín. 6 caracteres)"
+                            className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs flex-1 min-w-[220px]"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (resetClientNewPass.trim().length < 6) {
+                                setBannerMsg('A nova senha deve ter pelo menos 6 caracteres.');
+                                return;
+                              }
+                              await onResetClientPassword(
+                                u.uid,
+                                u.username || u.email,
+                                resetClientNewPass.trim()
+                              );
+                              setResetClientUid(null);
+                              setResetClientNewPass('');
+                              setBannerMsg(`Nova senha definida com sucesso para ${u.name} (${u.email}).`);
+                            }}
+                            className="px-3 py-1.5 bg-[#0B5ED7] text-white font-semibold rounded-lg hover:bg-[#094bb0]"
+                          >
+                            Guardar Nova Senha
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1171,24 +1253,208 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </form>
 
-            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 h-fit">
-              <h2 className="text-base font-bold text-slate-900">
-                Arquitetura Pronta para Publicação na Hostinger
-              </h2>
-              <p className="text-xs text-slate-600">
-                O repositório inclui toda a estrutura recomendada para planos de alojamento partilhado ou Cloud da Hostinger sem necessidade de Node.js permanentemente ativo:
-              </p>
-              <ul className="text-xs text-slate-700 space-y-2 font-mono-tabular bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <li>/database/schema.sql (Script MySQL 8.0+ com 10 tabelas)</li>
-                <li>/backend/config/database.php (PDO Prepared Statements)</li>
-                <li>/backend/config/Mailer.php (SMTP + PHPMailer)</li>
-                <li>/backend/middleware/AuthMiddleware.php (RBAC, XSS, Sessões)</li>
-                <li>/backend/controllers/OrderController.php</li>
-                <li>/backend/models/Order.php</li>
-                <li>/backend/api/index.php (REST API PHP 8.2+)</li>
-                <li>/backend/uploads/.htaccess (Bloqueio de execução de scripts)</li>
-                <li>/HOSTINGER_DEPLOY.md (Manual passo-a-passo hPanel)</li>
-              </ul>
+            <div className="space-y-6">
+              {/* SEPARATE ADMIN & CLIENT LINKS */}
+              <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+                <h2 className="text-base font-bold text-slate-900">
+                  Links Separados de Acesso (Painel Administrativo & Painel do Cliente)
+                </h2>
+                <p className="text-xs text-slate-600">
+                  Utilize o link exclusivo abaixo para aceder diretamente ao Painel Administrativo separado da loja pública, ou partilhe o link direto do Painel de Cadastro com os seus clientes.
+                </p>
+
+                <div className="space-y-3 text-xs">
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
+                    <div className="font-bold text-slate-900 flex items-center justify-between">
+                      <span>Link Separado do Painel Administrativo</span>
+                      <a
+                        href="/admin"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[#0B5ED7] hover:underline"
+                      >
+                        Abrir <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${typeof window !== 'undefined' ? window.location.origin : 'https://muatxissombosolution.online'}/admin`}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded font-mono-tabular text-slate-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}/admin`;
+                          navigator.clipboard?.writeText(url);
+                          setBannerMsg(`Link do Painel Administrativo copiado: ${url}`);
+                        }}
+                        className="px-3 py-1.5 bg-slate-900 text-white font-semibold rounded hover:bg-slate-800 inline-flex items-center gap-1 shrink-0"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copiar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
+                    <div className="font-bold text-slate-900 flex items-center justify-between">
+                      <span>Link Direto do Painel de Cadastro & Área do Cliente</span>
+                      <a
+                        href="/cliente"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[#0B5ED7] hover:underline"
+                      >
+                        Abrir <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${typeof window !== 'undefined' ? window.location.origin : 'https://muatxissombosolution.online'}/cliente`}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded font-mono-tabular text-slate-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}/cliente`;
+                          navigator.clipboard?.writeText(url);
+                          setBannerMsg(`Link do Painel do Cliente copiado: ${url}`);
+                        }}
+                        className="px-3 py-1.5 bg-[#0B5ED7] text-white font-semibold rounded hover:bg-[#094bb0] inline-flex items-center gap-1 shrink-0"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copiar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* CHANGE ADMIN USERNAME & PASSWORD */}
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setAdminPassError('');
+                  if (!adminCurrentPass.trim()) {
+                    setAdminPassError('Introduza a palavra-passe atual do administrador.');
+                    return;
+                  }
+                  if (adminNewPass.length < 6) {
+                    setAdminPassError('A nova palavra-passe deve ter pelo menos 6 caracteres.');
+                    return;
+                  }
+                  if (adminNewPass !== adminConfirmPass) {
+                    setAdminPassError('A confirmação da nova palavra-passe não coincide.');
+                    return;
+                  }
+                  setAdminPassSaving(true);
+                  try {
+                    await onChangeAdminPassword(
+                      adminCurrentPass,
+                      adminNewPass,
+                      adminUsername.trim()
+                    );
+                    setAdminCurrentPass('');
+                    setAdminNewPass('');
+                    setAdminConfirmPass('');
+                    setBannerMsg(
+                      'Utilizador e palavra-passe do Painel Administrativo atualizados com sucesso!'
+                    );
+                  } catch (err: any) {
+                    setAdminPassError(
+                      err?.message || 'Não foi possível alterar a senha administrativa.'
+                    );
+                  } finally {
+                    setAdminPassSaving(false);
+                  }
+                }}
+                className="bg-white border border-slate-200 rounded-xl p-6 space-y-4"
+              >
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-[#0B5ED7]" />
+                  <h2 className="text-base font-bold text-slate-900">
+                    Alterar Utilizador (User) e Senha do Painel Administrativo
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Personalize o seu nome de utilizador (`user`) e palavra-passe (`senha`) para acesso exclusivo ao link `/admin`.
+                </p>
+
+                {adminPassError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg font-medium">
+                    {adminPassError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="sm:col-span-2">
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Utilizador Administrativo (User)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={adminUsername}
+                      onChange={(e) => setAdminUsername(e.target.value)}
+                      placeholder="Ex.: admin"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Palavra-Passe Atual
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={adminCurrentPass}
+                      onChange={(e) => setAdminCurrentPass(e.target.value)}
+                      placeholder="Introduza a senha atual"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Nova Palavra-Passe (mín. 6 caracteres)
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={adminNewPass}
+                      onChange={(e) => setAdminNewPass(e.target.value)}
+                      placeholder="Nova senha"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Confirmar Nova Palavra-Passe
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={adminConfirmPass}
+                      onChange={(e) => setAdminConfirmPass(e.target.value)}
+                      placeholder="Repita a nova senha"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={adminPassSaving}
+                  className="w-full py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {adminPassSaving
+                    ? 'A Guardar Nova Senha...'
+                    : 'Atualizar Utilizador e Senha do Administrador'}
+                </button>
+              </form>
             </div>
           </div>
         )}

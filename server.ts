@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -6,6 +7,107 @@ import { createServer as createViteServer, build as viteBuild } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT_DIR = path.dirname(__filename);
+const DATA_DIR = path.join(ROOT_DIR, 'data');
+const STORE_FILE = path.join(DATA_DIR, 'platform_store.json');
+
+interface StoredAccount {
+  uid: string;
+  username: string;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  nif: string;
+  address: string;
+  role: 'client' | 'admin';
+  status: 'active' | 'suspended';
+  passwordHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PlatformStoreData {
+  accounts: StoredAccount[];
+  orders: Record<string, unknown>[];
+  website_projects: Record<string, unknown>[];
+  licenses_issued: Record<string, unknown>[];
+  domains_registered: Record<string, unknown>[];
+  support_messages: Record<string, unknown>[];
+  notifications: Record<string, unknown>[];
+  feedbacks: Record<string, unknown>[];
+  catalog_items: Record<string, unknown>[];
+  platform_settings: Record<string, unknown> | null;
+}
+
+function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(`muatxissombo_salt_2026:${password}`).digest('hex');
+}
+
+function loadStore(): PlatformStoreData {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (fs.existsSync(STORE_FILE)) {
+      const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw) as PlatformStoreData;
+      if (Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Initializing fresh platform store:', err);
+  }
+
+  const now = new Date().toISOString();
+  const initialStore: PlatformStoreData = {
+    accounts: [
+      {
+        uid: 'admin_muatxissombo',
+        username: 'admin',
+        name: 'Administrador Muatxissombo',
+        email: 'info@muatxissombosolution.online',
+        phone: '+244 927 496 287',
+        company: 'Muatxissombo Soluções Digitais',
+        nif: '5000000000',
+        address: 'Centralidade do Kilamba, E22, Porta 12, 1.º Andar, Luanda, Angola',
+        role: 'admin',
+        status: 'active',
+        passwordHash: hashPassword('Muatxissombo@2026'),
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    orders: [],
+    website_projects: [],
+    licenses_issued: [],
+    domains_registered: [],
+    support_messages: [],
+    notifications: [],
+    feedbacks: [],
+    catalog_items: [],
+    platform_settings: null,
+  };
+
+  saveStore(initialStore);
+  return initialStore;
+}
+
+function saveStore(store: PlatformStoreData): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving platform store:', err);
+  }
+}
+
+function sanitizeAccount(acc: StoredAccount) {
+  const { passwordHash: _omitted, ...safe } = acc;
+  return safe;
+}
 
 async function ensureProductionBuild(distIndexHtml: string): Promise<boolean> {
   if (fs.existsSync(distIndexHtml)) {
@@ -29,6 +131,307 @@ async function startServer() {
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' });
+  });
+
+  // ================= AUTHENTICATION & PASSWORD MANAGEMENT ENDPOINTS =================
+  app.post('/api/auth/register', (req, res) => {
+    const { name, username, email, phone, company, nif, address, password } = req.body || {};
+    const cleanEmail = String(email || username || '').trim().toLowerCase();
+    const cleanUsername = String(username || cleanEmail.split('@')[0] || '')
+      .trim()
+      .toLowerCase();
+    const cleanPass = String(password || '');
+
+    if (!cleanEmail && !cleanUsername) {
+      return res.status(400).json({ error: 'Informe um utilizador ou endereço de e-mail válido.' });
+    }
+    if (cleanPass.length < 6) {
+      return res.status(400).json({ error: 'A palavra-passe deve ter pelo menos 6 caracteres.' });
+    }
+
+    const store = loadStore();
+    const exists = store.accounts.find(
+      (a) =>
+        (cleanEmail && a.email.toLowerCase() === cleanEmail) ||
+        (cleanUsername && a.username.toLowerCase() === cleanUsername)
+    );
+    if (exists) {
+      return res.status(409).json({
+        error: 'Já existe uma conta registada com este utilizador ou e-mail. Inicie sessão.',
+      });
+    }
+
+    const now = new Date().toISOString();
+    const isOwnerAdmin =
+      cleanEmail === 'joaomuatxissombo22@gmail.com' ||
+      cleanEmail === 'info@muatxissombosolution.online';
+    const newAccount: StoredAccount = {
+      uid: `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      username: cleanUsername || cleanEmail,
+      name: String(name || cleanUsername || 'Cliente Muatxissombo').trim().slice(0, 120),
+      email: (cleanEmail.includes('@') ? cleanEmail : `${cleanUsername}@cliente.muatxissombo.ao`).slice(
+        0,
+        160
+      ),
+      phone: String(phone || '').trim().slice(0, 40),
+      company: String(company || '').trim().slice(0, 120),
+      nif: String(nif || '').trim().slice(0, 40),
+      address: String(address || 'Luanda, Angola').trim().slice(0, 250),
+      role: isOwnerAdmin ? 'admin' : 'client',
+      status: 'active',
+      passwordHash: hashPassword(cleanPass),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    store.accounts.push(newAccount);
+    saveStore(store);
+
+    return res.json({
+      ok: true,
+      success: true,
+      user: sanitizeAccount(newAccount),
+    });
+  });
+
+  app.post('/api/auth/login', (req, res) => {
+    const { identifier, password, requireAdmin } = req.body || {};
+    const cleanId = String(identifier || '').trim().toLowerCase();
+    const cleanPass = String(password || '');
+
+    if (!cleanId || !cleanPass) {
+      return res.status(400).json({ error: 'Introduza o utilizador/e-mail e a palavra-passe.' });
+    }
+
+    const store = loadStore();
+    const incomingHash = hashPassword(cleanPass);
+
+    const account = store.accounts.find((a) => {
+      const matchId =
+        a.username.toLowerCase() === cleanId ||
+        a.email.toLowerCase() === cleanId ||
+        (a.role === 'admin' &&
+          (cleanId === 'admin' ||
+            cleanId === 'muatxissombo' ||
+            cleanId === 'joaomuatxissombo22@gmail.com' ||
+            cleanId === 'info@muatxissombosolution.online'));
+      return matchId && a.passwordHash === incomingHash;
+    });
+
+    if (!account) {
+      return res.status(401).json({
+        error: 'Utilizador ou palavra-passe incorretos. Verifique os seus dados.',
+      });
+    }
+
+    if (account.status === 'suspended') {
+      return res.status(403).json({
+        error: 'Esta conta encontra-se suspensa. Contacte o suporte da Muatxissombo.',
+      });
+    }
+
+    if (requireAdmin && account.role !== 'admin') {
+      return res.status(403).json({
+        error: 'Esta conta não possui privilégios de Administrador.',
+      });
+    }
+
+    return res.json({
+      ok: true,
+      success: true,
+      user: sanitizeAccount(account),
+    });
+  });
+
+  app.post('/api/auth/change-password', (req, res) => {
+    const { uid, identifier, currentPassword, newPassword, newUsername, adminOverride } =
+      req.body || {};
+    const cleanNewPass = String(newPassword || '');
+    if (cleanNewPass.length < 6) {
+      return res
+        .status(400)
+        .json({ error: 'A nova palavra-passe deve ter pelo menos 6 caracteres.' });
+    }
+
+    const store = loadStore();
+    const target = store.accounts.find(
+      (a) =>
+        (uid && a.uid === uid) ||
+        (identifier &&
+          (a.username.toLowerCase() === String(identifier).toLowerCase() ||
+            a.email.toLowerCase() === String(identifier).toLowerCase())) ||
+        (uid === 'admin' && a.role === 'admin')
+    );
+
+    if (!target) {
+      // If user authenticated via Google/Firebase and wasn't in local store yet, create record
+      const now = new Date().toISOString();
+      const created: StoredAccount = {
+        uid: String(uid || `usr_${Date.now()}`),
+        username: String(newUsername || identifier || 'utilizador').trim().toLowerCase(),
+        name: String(identifier || 'Utilizador Muatxissombo'),
+        email: String(identifier || 'cliente@muatxissombosolution.online'),
+        phone: '',
+        company: '',
+        nif: '',
+        address: 'Luanda, Angola',
+        role: uid === 'admin' ? 'admin' : 'client',
+        status: 'active',
+        passwordHash: hashPassword(cleanNewPass),
+        createdAt: now,
+        updatedAt: now,
+      };
+      store.accounts.push(created);
+      saveStore(store);
+      return res.json({ ok: true, success: true, user: sanitizeAccount(created) });
+    }
+
+    if (!adminOverride && currentPassword) {
+      const currentHash = hashPassword(String(currentPassword));
+      if (target.passwordHash !== currentHash) {
+        return res.status(401).json({ error: 'A palavra-passe atual está incorreta.' });
+      }
+    }
+
+    target.passwordHash = hashPassword(cleanNewPass);
+    if (newUsername && String(newUsername).trim()) {
+      target.username = String(newUsername).trim().toLowerCase().slice(0, 80);
+    }
+    target.updatedAt = new Date().toISOString();
+    saveStore(store);
+
+    return res.json({
+      ok: true,
+      success: true,
+      user: sanitizeAccount(target),
+    });
+  });
+
+  // ================= PERSISTENT STORE SYNC ENDPOINTS =================
+  app.get('/api/store/state', (req, res) => {
+    const store = loadStore();
+    const userId = String(req.query.userId || '').trim();
+    const role = String(req.query.role || 'client').trim();
+    const isAdmin = role === 'admin';
+
+    res.json({
+      ok: true,
+      success: true,
+      users: store.accounts.map(sanitizeAccount),
+      orders: isAdmin || !userId ? store.orders : store.orders.filter((o) => o.userId === userId),
+      website_projects:
+        isAdmin || !userId
+          ? store.website_projects
+          : store.website_projects.filter((p) => p.userId === userId),
+      licenses_issued:
+        isAdmin || !userId
+          ? store.licenses_issued
+          : store.licenses_issued.filter((l) => l.userId === userId),
+      domains_registered:
+        isAdmin || !userId
+          ? store.domains_registered
+          : store.domains_registered.filter((d) => d.userId === userId),
+      support_messages:
+        isAdmin || !userId
+          ? store.support_messages
+          : store.support_messages.filter((m) => m.userId === userId),
+      notifications:
+        isAdmin || !userId
+          ? store.notifications
+          : store.notifications.filter((n) => n.userId === userId || n.userId === 'admin'),
+      feedbacks: store.feedbacks,
+      catalog_items: store.catalog_items,
+      platform_settings: store.platform_settings,
+    });
+  });
+
+  app.post('/api/store/upsert', (req, res) => {
+    const body = req.body || {};
+    const collectionName = body.collectionName || body.collection;
+    const idField = body.idField || (collectionName === 'users' ? 'uid' : 'id');
+    const record =
+      body.record || (body.data ? { ...body.data, [idField]: body.id || body.data[idField] } : null);
+    const deleteId = body.deleteId || (body.action === 'delete' ? body.id : undefined);
+    const store = loadStore();
+
+    if (collectionName === 'users') {
+      if (deleteId) {
+        store.accounts = store.accounts.filter((a) => a.uid !== deleteId);
+      } else if (record && (record.uid || body.id)) {
+        const targetUid = record.uid || body.id;
+        const idx = store.accounts.findIndex((a) => a.uid === targetUid);
+        if (idx >= 0) {
+          store.accounts[idx] = {
+            ...store.accounts[idx],
+            ...record,
+            uid: targetUid,
+            passwordHash: store.accounts[idx].passwordHash,
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          const now = new Date().toISOString();
+          store.accounts.push({
+            uid: String(targetUid),
+            username: String(record.username || record.email || targetUid).toLowerCase(),
+            name: String(record.name || 'Cliente Muatxissombo'),
+            email: String(record.email || ''),
+            phone: String(record.phone || ''),
+            company: String(record.company || ''),
+            nif: String(record.nif || ''),
+            address: String(record.address || 'Luanda, Angola'),
+            role: record.role === 'admin' ? 'admin' : 'client',
+            status: record.status === 'suspended' ? 'suspended' : 'active',
+            passwordHash: hashPassword('Muatxissombo@2026'),
+            createdAt: record.createdAt || now,
+            updatedAt: now,
+          });
+        }
+      }
+      saveStore(store);
+      return res.json({ ok: true, success: true });
+    }
+
+    if (collectionName === 'platform_settings') {
+      store.platform_settings = record;
+      saveStore(store);
+      return res.json({ ok: true, success: true });
+    }
+
+    const allowedCollections = [
+      'orders',
+      'website_projects',
+      'licenses_issued',
+      'domains_registered',
+      'support_messages',
+      'notifications',
+      'feedbacks',
+      'catalog_items',
+    ] as const;
+
+    type AllowedCol = (typeof allowedCollections)[number];
+    if (!allowedCollections.includes(collectionName as AllowedCol)) {
+      return res.status(400).json({ error: 'Colecção inválida.' });
+    }
+
+    const colKey = collectionName as AllowedCol;
+    const list = store[colKey] || [];
+
+    if (deleteId) {
+      store[colKey] = list.filter((item) => item[idField] !== deleteId);
+    } else if (record) {
+      const recId = record[idField] || body.id;
+      const normalizedRecord = { ...record, [idField]: recId };
+      const idx = list.findIndex((item) => item[idField] === recId);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...normalizedRecord };
+      } else {
+        list.unshift(normalizedRecord);
+      }
+      store[colKey] = list;
+    }
+
+    saveStore(store);
+    return res.json({ ok: true, success: true });
   });
 
   // Real Domain DNS & RDAP Availability Verification Endpoint

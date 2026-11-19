@@ -25,6 +25,7 @@ import { formatKz, PlatformSettingsData } from '../data/defaultCatalog';
 
 export interface UserProfileRecord {
   uid: string;
+  username?: string;
   name: string;
   email: string;
   phone?: string;
@@ -166,7 +167,11 @@ interface ClientDashboardProps {
     nif: string;
     address: string;
   }) => Promise<void>;
-  onChangePassword: (newPassword: string) => Promise<void>;
+  onChangePassword: (
+    currentPassword: string,
+    newPassword: string,
+    newUsername?: string
+  ) => Promise<void>;
   onSendSupportMessage: (subject: string, message: string) => Promise<void>;
   onToggleDomainAutoRenew: (domainId: string, autoRenew: boolean, nameservers: string) => Promise<void>;
   onSubmitFeedback: (serviceCategory: string, rating: number, comment: string, projectReference: string) => Promise<void>;
@@ -229,11 +234,17 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
 
   // Profile form state
   const [name, setName] = useState(profile.name);
+  const [username, setUsername] = useState(
+    profile.username || profile.email.split('@')[0] || 'cliente'
+  );
   const [phone, setPhone] = useState(profile.phone || '');
   const [company, setCompany] = useState(profile.company || '');
   const [nif, setNif] = useState(profile.nif || '');
   const [address, setAddress] = useState(profile.address || '');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // Support chat state
   const [supportSubject, setSupportSubject] = useState('Apoio Técnico / Encomenda');
@@ -309,9 +320,26 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
       setStatusFeedback('A nova palavra-passe deve ter pelo menos 6 caracteres.');
       return;
     }
-    await onChangePassword(newPassword);
-    setNewPassword('');
-    setStatusFeedback('Palavra-passe atualizada com segurança.');
+    if (newPassword !== confirmPassword) {
+      setStatusFeedback('A confirmação da nova palavra-passe não coincide.');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await onChangePassword(currentPassword, newPassword, username.trim());
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setStatusFeedback('Palavra-passe e credenciais do Painel do Cliente atualizadas com sucesso!');
+    } catch (err) {
+      setStatusFeedback(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível alterar a palavra-passe. Verifique a senha atual.'
+      );
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const handleSupportSubmit = async (e: React.FormEvent) => {
@@ -342,7 +370,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
     { id: 'faturas', label: 'Faturas', icon: <FileText className="w-4 h-4" /> },
     { id: 'notificacoes', label: 'Notificações', icon: <Bell className="w-4 h-4" /> },
     { id: 'feedback', label: 'Avaliar Serviço (Feedback)', icon: <Star className="w-4 h-4" /> },
-    { id: 'perfil', label: 'Meu Perfil', icon: <User className="w-4 h-4" /> },
+    { id: 'perfil', label: 'Meu Perfil & Alterar Senha', icon: <User className="w-4 h-4" /> },
     { id: 'suporte', label: 'Suporte Técnico 24/7', icon: <Headphones className="w-4 h-4" /> },
   ];
 
@@ -379,7 +407,18 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
           </nav>
         </div>
 
-        <div className="pt-4 mt-6 border-t border-slate-200">
+        <div className="pt-4 mt-6 border-t border-slate-200 space-y-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('perfil');
+              setStatusFeedback('');
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold text-[#0B5ED7] hover:bg-blue-50 rounded-lg transition-colors"
+          >
+            <KeyRound className="w-4 h-4" />
+            <span>Alterar Senha</span>
+          </button>
           <button
             type="button"
             onClick={onLogout}
@@ -1348,27 +1387,71 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
               onSubmit={handlePasswordSubmit}
               className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 h-fit"
             >
-              <h2 className="text-base font-bold text-slate-900">Segurança e Palavra-Passe</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-slate-900">
+                  Alterar Senha do Painel do Cliente
+                </h2>
+                <KeyRound className="w-4 h-4 text-[#0B5ED7]" />
+              </div>
               <p className="text-xs text-slate-600">
-                Altere a palavra-passe de acesso da sua conta.
+                Personalize o seu utilizador e altere a palavra-passe de acesso à Área do Cliente.
               </p>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Nova Palavra-Passe
+                  Utilizador de Acesso (User)
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Ex.: joao.cliente"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Palavra-Passe Atual (opcional se entrou com Google)
                 </label>
                 <input
                   type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Digite a sua senha atual"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Nova Palavra-Passe *
+                </label>
+                <input
+                  type="password"
+                  required
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Mínimo 6 caracteres"
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Confirmar Nova Palavra-Passe *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repita a nova palavra-passe"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                />
+              </div>
               <button
                 type="submit"
-                className="px-4 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800"
+                disabled={changingPassword}
+                className="w-full px-4 py-2.5 bg-[#0A192F] text-white text-xs font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50"
               >
-                Atualizar Palavra-Passe
+                {changingPassword ? 'A Guardar Nova Senha...' : 'Atualizar Palavra-Passe do Cliente'}
               </button>
             </form>
           </div>

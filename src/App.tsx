@@ -66,6 +66,7 @@ import {
   CatalogItemData,
   PlatformSettingsData,
   formatKz,
+  normalizeDomainCatalogPrices,
 } from './data/defaultCatalog';
 import {
   WebsiteShowcaseModal,
@@ -138,6 +139,7 @@ export default function App() {
   // Auth Modal / Form State
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'reset'>('login');
   const [authName, setAuthName] = useState('');
+  const [authUsername, setAuthUsername] = useState('');
   const [authEmail, setAuthEmail] = useState('');
   const [authPhone, setAuthPhone] = useState('');
   const [authCompany, setAuthCompany] = useState('');
@@ -146,8 +148,16 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  // Separate Admin Login State (/admin or ?painel=admin)
+  const [adminLoginUser, setAdminLoginUser] = useState('admin');
+  const [adminLoginPass, setAdminLoginPass] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState('');
+  const [adminLoginLoading, setAdminLoginLoading] = useState(false);
+
   // Catalog & Platform Settings
-  const [catalogItems, setCatalogItems] = useState<CatalogItemData[]>(INITIAL_CATALOG_ITEMS);
+  const [catalogItems, setCatalogItems] = useState<CatalogItemData[]>(
+    normalizeDomainCatalogPrices(INITIAL_CATALOG_ITEMS)
+  );
   const [platformSettings, setPlatformSettings] = useState<PlatformSettingsData>(
     DEFAULT_PLATFORM_SETTINGS
   );
@@ -228,32 +238,74 @@ export default function App() {
     }
   }, [activeView, activeSectionSeo]);
 
-  // Support SEO deep links (?section=dominios&q=empresa.ao) on initial load
+  // Support SEO deep links & separate Admin (/admin) and Client (/cliente, /cadastro) panel routes
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const section = params.get('section') as SeoRouteKey | null;
-    const q = params.get('q');
-    if (q) {
-      setDomainInput(q);
-    }
-    const validSections: SeoRouteKey[] = [
-      'inicio',
-      'criacao-sites',
-      'dominios',
-      'hospedagem',
-      'licencas',
-      'assistencia',
-      'sobre',
-      'contactos',
-    ];
-    if (section && validSections.includes(section)) {
-      setActiveSectionSeo(section);
-      setTimeout(() => {
-        const el = document.getElementById(section);
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
-      }, 250);
-    }
+
+    const applyUrlRouting = () => {
+      const path = window.location.pathname.toLowerCase().replace(/\/+$/, '') || '/';
+      const hash = window.location.hash.toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      const painel = (params.get('painel') || '').toLowerCase();
+      const section = params.get('section') as SeoRouteKey | null;
+      const q = params.get('q');
+
+      if (q) {
+        setDomainInput(q);
+      }
+
+      if (
+        path === '/admin' ||
+        path === '/painel-admin' ||
+        painel === 'admin' ||
+        hash === '#admin'
+      ) {
+        setActiveView('admin');
+        return;
+      }
+
+      if (
+        path === '/cadastro' ||
+        painel === 'cadastro' ||
+        hash === '#cadastro'
+      ) {
+        setAuthMode('register');
+        setActiveView((prev) => (prev === 'client' ? 'client' : 'auth'));
+        return;
+      }
+
+      if (
+        path === '/cliente' ||
+        path === '/painel-cliente' ||
+        painel === 'cliente' ||
+        hash === '#cliente'
+      ) {
+        setActiveView((prev) => (prev === 'client' ? 'client' : 'auth'));
+        return;
+      }
+
+      const validSections: SeoRouteKey[] = [
+        'inicio',
+        'criacao-sites',
+        'dominios',
+        'hospedagem',
+        'licencas',
+        'assistencia',
+        'sobre',
+        'contactos',
+      ];
+      if (section && validSections.includes(section)) {
+        setActiveSectionSeo(section);
+        setTimeout(() => {
+          const el = document.getElementById(section);
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }, 250);
+      }
+    };
+
+    applyUrlRouting();
+    window.addEventListener('popstate', applyUrlRouting);
+    return () => window.removeEventListener('popstate', applyUrlRouting);
   }, []);
 
   const HERO_SLIDES = [
@@ -273,7 +325,7 @@ export default function App() {
       subtitle:
         'Pesquisa de disponibilidade via consulta DNS real para extensões .co.ao, .ao e .com, acompanhada de planos de hospedagem NVMe com SSL e e-mails corporativos.',
       image: '/src/assets/images/service_hosting_nvme_1795098510580.jpg',
-      badge: 'Domínios & Hospedagem · Desde 13.500 Kz/ano',
+      badge: 'Domínios & Hospedagem · Desde 35.000 Kz/ano',
       ctaLabel: 'Pesquisar Domínio & Hospedagem',
       targetSection: 'dominios',
     },
@@ -344,6 +396,69 @@ export default function App() {
     }, 6000);
   };
 
+  // Helper to persist & sync records to backend /api/store/upsert
+  const upsertBackendStore = async (
+    collectionName: string,
+    id: string,
+    data: Record<string, any> | null,
+    action: 'upsert' | 'delete' = 'upsert'
+  ) => {
+    try {
+      await fetch('/api/store/upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collection: collectionName,
+          id,
+          data,
+          action,
+        }),
+      });
+    } catch (e) {
+      console.warn('Backend store sync warning:', e);
+    }
+  };
+
+  // Fetch & sync state from backend persistent store (/api/store/state)
+  const refreshBackendStore = async (profileArg?: UserProfileRecord | null) => {
+    const activeProf = profileArg !== undefined ? profileArg : userProfile;
+    try {
+      const q = activeProf
+        ? `?userId=${encodeURIComponent(activeProf.uid)}&role=${encodeURIComponent(activeProf.role)}`
+        : '';
+      const res = await fetch(`/api/store/state${q}`);
+      if (!res.ok) return;
+      const payload = await res.json();
+      if (!payload?.ok) return;
+
+      if (Array.isArray(payload.catalog_items) && payload.catalog_items.length > 0) {
+        setCatalogItems(normalizeDomainCatalogPrices(payload.catalog_items));
+      }
+      if (payload.platform_settings && payload.platform_settings.companyName) {
+        setPlatformSettings((prev) => ({
+          ...prev,
+          ...payload.platform_settings,
+        }));
+      }
+      if (Array.isArray(payload.feedbacks) && payload.feedbacks.length > 0) {
+        setPublicFeedbacks(payload.feedbacks);
+      }
+      if (activeProf) {
+        if (Array.isArray(payload.orders)) setOrders(payload.orders);
+        if (Array.isArray(payload.website_projects)) setWebsiteProjects(payload.website_projects);
+        if (Array.isArray(payload.licenses_issued)) setLicensesIssued(payload.licenses_issued);
+        if (Array.isArray(payload.domains_registered)) setDomainsRegistered(payload.domains_registered);
+        if (Array.isArray(payload.support_messages)) setSupportMessages(payload.support_messages);
+        if (Array.isArray(payload.notifications)) setNotifications(payload.notifications);
+        if (activeProf.role === 'admin' && Array.isArray(payload.users)) {
+          setAllUsers(payload.users);
+        }
+      }
+    } catch {
+      // ignore offline
+    }
+  };
+
   // Helper to record & dispatch automated email notification (Section 9)
   const triggerAutomatedNotification = async (
     targetUserId: string,
@@ -355,7 +470,8 @@ export default function App() {
   ) => {
     try {
       const notifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      await setDoc(doc(db, 'notifications', notifId), {
+      const notifRecord: NotificationItemRecord = {
+        id: notifId,
         userId: targetUserId,
         recipientEmail: recipientEmail.slice(0, 160),
         recipientName: recipientName.slice(0, 120),
@@ -364,9 +480,18 @@ export default function App() {
         bodyPreview: bodyPreview.slice(0, 1500),
         deliveryChannel: 'Email & Painel',
         status: 'Enviado',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      };
+
+      await upsertBackendStore('notifications', notifId, notifRecord);
+      setNotifications((prev) => [notifRecord, ...prev.filter((n) => n.id !== notifId)]);
+
+      if (currentUser?.emailVerified) {
+        await setDoc(doc(db, 'notifications', notifId), {
+          ...notifRecord,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch(() => null);
+      }
 
       await fetch('/api/send-email', {
         method: 'POST',
@@ -383,12 +508,24 @@ export default function App() {
     }
   };
 
-  // 1. Auth Listener & Profile Synchronization
+  // 1. Auth Listener & Profile Synchronization (Supports Backend Session + Firebase Google Sign-In)
   useEffect(() => {
+    // Check saved backend session in localStorage first
+    try {
+      const savedSession = localStorage.getItem('mx_auth_session');
+      if (savedSession) {
+        const parsed = JSON.parse(savedSession) as UserProfileRecord;
+        if (parsed && parsed.uid && parsed.email) {
+          setUserProfile(parsed);
+        }
+      }
+    } catch {
+      // ignore invalid session
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setCurrentUser(fbUser);
       if (!fbUser) {
-        setUserProfile(null);
         setAuthReady(true);
         return;
       }
@@ -400,14 +537,19 @@ export default function App() {
 
         if (snap.exists()) {
           const data = snap.data() as UserProfileRecord;
-          setUserProfile({
+          const syncedProfile: UserProfileRecord = {
             ...data,
             uid: fbUser.uid,
+            username: data.username || (fbUser.email || '').split('@')[0],
             role: isOwnerAdmin ? 'admin' : data.role || 'client',
-          });
+          };
+          setUserProfile(syncedProfile);
+          localStorage.setItem('mx_auth_session', JSON.stringify(syncedProfile));
+          await upsertBackendStore('users', fbUser.uid, syncedProfile);
         } else {
           const newProfile: UserProfileRecord = {
             uid: fbUser.uid,
+            username: (fbUser.email || 'cliente').split('@')[0],
             name: (fbUser.displayName || fbUser.email?.split('@')[0] || 'Cliente Muatxissombo').slice(
               0,
               120
@@ -420,12 +562,13 @@ export default function App() {
             role: isOwnerAdmin ? 'admin' : 'client',
             status: 'active',
           };
+          await upsertBackendStore('users', fbUser.uid, newProfile);
           if (fbUser.emailVerified) {
             await setDoc(userRef, {
               ...newProfile,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
-            });
+            }).catch(() => null);
             await triggerAutomatedNotification(
               fbUser.uid,
               newProfile.email,
@@ -436,6 +579,7 @@ export default function App() {
             );
           }
           setUserProfile(newProfile);
+          localStorage.setItem('mx_auth_session', JSON.stringify(newProfile));
         }
       } catch (err) {
         console.error('Profile sync info:', err);
@@ -449,6 +593,8 @@ export default function App() {
 
   // 2. Public Catalog, Settings & Public Feedbacks Listeners
   useEffect(() => {
+    refreshBackendStore(userProfile);
+
     const qCatalog = query(collection(db, 'catalog_items'), where('available', '==', true));
     const unsubCatalog = onSnapshot(
       qCatalog,
@@ -458,9 +604,9 @@ export default function App() {
             ...(d.data() as CatalogItemData),
             id: d.id,
           }));
-          setCatalogItems(loaded);
+          setCatalogItems(normalizeDomainCatalogPrices(loaded));
         } else {
-          setCatalogItems(INITIAL_CATALOG_ITEMS);
+          setCatalogItems(normalizeDomainCatalogPrices(INITIAL_CATALOG_ITEMS));
         }
       },
       (err) => {
@@ -497,11 +643,13 @@ export default function App() {
     const unsubFeedbacks = onSnapshot(
       qFeedbacks,
       (snap) => {
-        const list: FeedbackPublicRecord[] = snap.docs.map((d) => ({
-          ...(d.data() as Omit<FeedbackPublicRecord, 'id'>),
-          id: d.id,
-        }));
-        setPublicFeedbacks(list);
+        if (!snap.empty) {
+          const list: FeedbackPublicRecord[] = snap.docs.map((d) => ({
+            ...(d.data() as Omit<FeedbackPublicRecord, 'id'>),
+            id: d.id,
+          }));
+          setPublicFeedbacks(list);
+        }
       },
       () => null
     );
@@ -513,9 +661,9 @@ export default function App() {
     };
   }, []);
 
-  // 3. Authenticated User / Admin Listeners
+  // 3. Authenticated User / Admin Listeners (Backend Store + Firestore)
   useEffect(() => {
-    if (!authReady || !currentUser || !userProfile || !currentUser.emailVerified) {
+    if (!authReady || !userProfile) {
       setOrders([]);
       setWebsiteProjects([]);
       setLicensesIssued([]);
@@ -523,6 +671,12 @@ export default function App() {
       setSupportMessages([]);
       setNotifications([]);
       setAllUsers([]);
+      return;
+    }
+
+    refreshBackendStore(userProfile);
+
+    if (!currentUser || !currentUser.emailVerified) {
       return;
     }
 
@@ -534,14 +688,16 @@ export default function App() {
     const unsubOrders = onSnapshot(
       ordersRef,
       (snap) => {
-        setOrders(
-          snap.docs.map((d) => ({
-            ...(d.data() as Omit<OrderRecord, 'id'>),
-            id: d.id,
-          }))
-        );
+        if (!snap.empty) {
+          setOrders(
+            snap.docs.map((d) => ({
+              ...(d.data() as Omit<OrderRecord, 'id'>),
+              id: d.id,
+            }))
+          );
+        }
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'orders')
+      () => null
     );
 
     const webRef = isAdmin
@@ -550,14 +706,16 @@ export default function App() {
     const unsubWeb = onSnapshot(
       webRef,
       (snap) => {
-        setWebsiteProjects(
-          snap.docs.map((d) => ({
-            ...(d.data() as Omit<WebsiteProjectRecord, 'id'>),
-            id: d.id,
-          }))
-        );
+        if (!snap.empty) {
+          setWebsiteProjects(
+            snap.docs.map((d) => ({
+              ...(d.data() as Omit<WebsiteProjectRecord, 'id'>),
+              id: d.id,
+            }))
+          );
+        }
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'website_projects')
+      () => null
     );
 
     const licRef = isAdmin
@@ -566,14 +724,16 @@ export default function App() {
     const unsubLic = onSnapshot(
       licRef,
       (snap) => {
-        setLicensesIssued(
-          snap.docs.map((d) => ({
-            ...(d.data() as Omit<LicenseIssuedRecord, 'id'>),
-            id: d.id,
-          }))
-        );
+        if (!snap.empty) {
+          setLicensesIssued(
+            snap.docs.map((d) => ({
+              ...(d.data() as Omit<LicenseIssuedRecord, 'id'>),
+              id: d.id,
+            }))
+          );
+        }
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'licenses_issued')
+      () => null
     );
 
     const domRef = isAdmin
@@ -582,14 +742,16 @@ export default function App() {
     const unsubDom = onSnapshot(
       domRef,
       (snap) => {
-        setDomainsRegistered(
-          snap.docs.map((d) => ({
-            ...(d.data() as Omit<DomainRegisteredRecord, 'id'>),
-            id: d.id,
-          }))
-        );
+        if (!snap.empty) {
+          setDomainsRegistered(
+            snap.docs.map((d) => ({
+              ...(d.data() as Omit<DomainRegisteredRecord, 'id'>),
+              id: d.id,
+            }))
+          );
+        }
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'domains_registered')
+      () => null
     );
 
     const supRef = isAdmin
@@ -598,14 +760,16 @@ export default function App() {
     const unsubSup = onSnapshot(
       supRef,
       (snap) => {
-        setSupportMessages(
-          snap.docs.map((d) => ({
-            ...(d.data() as Omit<SupportMessageRecord, 'id'>),
-            id: d.id,
-          }))
-        );
+        if (!snap.empty) {
+          setSupportMessages(
+            snap.docs.map((d) => ({
+              ...(d.data() as Omit<SupportMessageRecord, 'id'>),
+              id: d.id,
+            }))
+          );
+        }
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'support_messages')
+      () => null
     );
 
     const notifRef = isAdmin
@@ -614,14 +778,16 @@ export default function App() {
     const unsubNotif = onSnapshot(
       notifRef,
       (snap) => {
-        setNotifications(
-          snap.docs.map((d) => ({
-            ...(d.data() as Omit<NotificationItemRecord, 'id'>),
-            id: d.id,
-          }))
-        );
+        if (!snap.empty) {
+          setNotifications(
+            snap.docs.map((d) => ({
+              ...(d.data() as Omit<NotificationItemRecord, 'id'>),
+              id: d.id,
+            }))
+          );
+        }
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'notifications')
+      () => null
     );
 
     let unsubUsers = () => {};
@@ -629,9 +795,11 @@ export default function App() {
       unsubUsers = onSnapshot(
         collection(db, 'users'),
         (snap) => {
-          setAllUsers(snap.docs.map((d) => d.data() as UserProfileRecord));
+          if (!snap.empty) {
+            setAllUsers(snap.docs.map((d) => d.data() as UserProfileRecord));
+          }
         },
-        (err) => handleFirestoreError(err, OperationType.LIST, 'users')
+        () => null
       );
     }
 
@@ -644,7 +812,7 @@ export default function App() {
       unsubNotif();
       unsubUsers();
     };
-  }, [authReady, currentUser, userProfile?.role]);
+  }, [authReady, currentUser, userProfile?.uid, userProfile?.role]);
 
   // Derived Catalog Groups
   const websiteServices = catalogItems.filter((i) => i.category === 'website');
@@ -678,8 +846,8 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const nextUrl =
         sectionId === 'inicio'
-          ? window.location.pathname
-          : `${window.location.pathname}?section=${encodeURIComponent(sectionId)}`;
+          ? '/'
+          : `/?section=${encodeURIComponent(sectionId)}`;
       window.history.replaceState(null, '', nextUrl);
     }
     setTimeout(() => {
@@ -757,10 +925,10 @@ export default function App() {
   // Checkout Handler (Section 8 – Never simulates fake approved payments!)
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !userProfile) {
+    if (!userProfile) {
       setCartOpen(false);
       setActiveView('auth');
-      setAuthMessage('Inicie sessão com a sua conta verificada para concluir a sua encomenda.');
+      setAuthMessage('Inicie sessão ou crie a sua conta para concluir a sua encomenda.');
       return;
     }
 
@@ -775,9 +943,10 @@ export default function App() {
     const initialStatus = hasProof ? 'Pagamento em análise' : 'Aguardando pagamento';
 
     try {
-      await setDoc(doc(db, 'orders', orderId), {
+      const newOrder: OrderRecord = {
+        id: orderId,
         orderNumber,
-        userId: currentUser.uid,
+        userId: userProfile.uid,
         customerName: userProfile.name.slice(0, 120),
         customerEmail: userProfile.email.slice(0, 160),
         customerPhone: (userProfile.phone || '').slice(0, 40),
@@ -791,9 +960,18 @@ export default function App() {
         paymentNotes: checkoutNotes.trim().slice(0, 500),
         status: initialStatus,
         invoiceNumber: `FT-${orderNumber}`,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      };
+
+      await upsertBackendStore('orders', orderId, newOrder);
+      setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== orderId)]);
+
+      if (currentUser?.emailVerified) {
+        await setDoc(doc(db, 'orders', orderId), {
+          ...newOrder,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch(() => null);
+      }
 
       // If any domain items are in the cart, register them in domains_registered as 'Pendente'
       for (const item of cart) {
@@ -801,8 +979,9 @@ export default function App() {
           const domId = `dom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           const nextYear = new Date();
           nextYear.setFullYear(nextYear.getFullYear() + 1);
-          await setDoc(doc(db, 'domains_registered', domId), {
-            userId: currentUser.uid,
+          const domRecord: DomainRegisteredRecord = {
+            id: domId,
+            userId: userProfile.uid,
             clientName: userProfile.name.slice(0, 120),
             clientEmail: userProfile.email.slice(0, 160),
             domainName: item.meta.slice(0, 140),
@@ -815,14 +994,22 @@ export default function App() {
             nameservers: 'ns1.hostinger.com, ns2.hostinger.com',
             status: 'Pendente',
             orderId,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+          };
+          await upsertBackendStore('domains_registered', domId, domRecord);
+          setDomainsRegistered((prev) => [domRecord, ...prev]);
+
+          if (currentUser?.emailVerified) {
+            await setDoc(doc(db, 'domains_registered', domId), {
+              ...domRecord,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }).catch(() => null);
+          }
         }
       }
 
       await triggerAutomatedNotification(
-        currentUser.uid,
+        userProfile.uid,
         userProfile.email,
         userProfile.name,
         'Confirmação de Receção de Encomenda',
@@ -842,7 +1029,8 @@ export default function App() {
         `Encomenda ${orderNumber} registada com sucesso! Confirmação enviada por e-mail.`
       );
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `orders/${orderId}`);
+      console.error('Checkout error:', err);
+      showToast('Erro ao processar encomenda. Tente novamente.');
     } finally {
       setCheckingOut(false);
     }
@@ -850,11 +1038,11 @@ export default function App() {
 
   // Website Quote Submission (Section 4.A)
   const handleWebsiteQuoteSubmit = async (payload: WebsiteQuoteFormPayload) => {
-    if (!currentUser || !userProfile) {
+    if (!userProfile) {
       setQuoteModalOpen(false);
       setActiveView('auth');
       setAuthMessage(
-        'Por favor inicie sessão com a sua conta verificada para submeter e acompanhar o seu projeto de website em tempo real.'
+        'Por favor inicie sessão ou crie a sua conta para submeter e acompanhar o seu projeto de website em tempo real.'
       );
       return;
     }
@@ -864,8 +1052,9 @@ export default function App() {
     const orderNumber = `MX-WEB-${Math.floor(1000 + Math.random() * 9000)}`;
 
     try {
-      await setDoc(doc(db, 'website_projects', projId), {
-        userId: currentUser.uid,
+      const projRecord: WebsiteProjectRecord = {
+        id: projId,
+        userId: userProfile.uid,
         clientName: payload.clientName,
         clientEmail: payload.clientEmail,
         clientPhone: payload.clientPhone,
@@ -884,13 +1073,12 @@ export default function App() {
         devStatus: 'Orçamento Solicitado',
         progressPercent: 15,
         quotedPriceKz: payload.availableBudgetKz,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      };
 
-      await setDoc(doc(db, 'orders', orderId), {
+      const orderRecord: OrderRecord = {
+        id: orderId,
         orderNumber,
-        userId: currentUser.uid,
+        userId: userProfile.uid,
         customerName: payload.clientName,
         customerEmail: payload.clientEmail,
         customerPhone: payload.clientPhone,
@@ -901,12 +1089,28 @@ export default function App() {
         paymentMethod: 'Transferência Bancária / Multicaixa Express',
         status: 'Aguardando pagamento',
         invoiceNumber: `FT-${orderNumber}`,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      };
+
+      await upsertBackendStore('website_projects', projId, projRecord);
+      await upsertBackendStore('orders', orderId, orderRecord);
+      setWebsiteProjects((prev) => [projRecord, ...prev]);
+      setOrders((prev) => [orderRecord, ...prev]);
+
+      if (currentUser?.emailVerified) {
+        await setDoc(doc(db, 'website_projects', projId), {
+          ...projRecord,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch(() => null);
+        await setDoc(doc(db, 'orders', orderId), {
+          ...orderRecord,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch(() => null);
+      }
 
       await triggerAutomatedNotification(
-        currentUser.uid,
+        userProfile.uid,
         payload.clientEmail,
         payload.clientName,
         'Solicitação de Criação de Website Recebida',
@@ -919,7 +1123,7 @@ export default function App() {
         'Pedido de criação de website submetido! Acompanhe o progresso em tempo real no seu Painel do Cliente.'
       );
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `website_projects/${projId}`);
+      console.error('Website quote submit error:', err);
     }
   };
 
@@ -939,6 +1143,7 @@ export default function App() {
     }
   };
 
+  // Client Registration & Login Handler (Backed by /api/auth/register & /api/auth/login)
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -947,37 +1152,116 @@ export default function App() {
 
     try {
       if (authMode === 'reset') {
-        await sendPasswordResetEmail(auth, authEmail.trim());
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: authEmail.trim(),
+            subject: 'Recuperação de Palavra-Passe – Muatxissombo Soluções Digitais',
+            eventType: 'Recuperação de Credenciais',
+            bodyPreview: `Recebemos um pedido de recuperação de senha para a conta associada a ${authEmail.trim()}. Caso necessite de redefinição imediata, contacte o suporte em info@muatxissombosolution.online ou WhatsApp +244 927 496 287.`,
+          }),
+        }).catch(() => null);
+        await sendPasswordResetEmail(auth, authEmail.trim()).catch(() => null);
         setAuthMessage(
-          'Instruções de recuperação de palavra-passe enviadas para o seu endereço de e-mail.'
+          'Pedido de recuperação registado! Verifique o seu e-mail ou contacte o nosso suporte no WhatsApp para assistência imediata.'
         );
       } else if (authMode === 'login') {
-        await signInWithEmailAndPassword(auth, authEmail.trim(), authPassword);
-        setActiveView('client');
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: (authEmail || authUsername).trim(),
+            password: authPassword,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Utilizador/e-mail ou palavra-passe incorretos.');
+        }
+        const loggedProfile = data.user as UserProfileRecord;
+        setUserProfile(loggedProfile);
+        localStorage.setItem('mx_auth_session', JSON.stringify(loggedProfile));
+        await refreshBackendStore(loggedProfile);
+        setActiveView(loggedProfile.role === 'admin' ? 'admin' : 'client');
+        showToast(`Bem-vindo de volta, ${loggedProfile.name}!`);
       } else {
-        const cred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPassword);
-        const isOwnerAdmin =
-          authEmail.trim().toLowerCase() === ADMIN_OWNER_EMAIL.toLowerCase();
-        const profileObj: UserProfileRecord = {
-          uid: cred.user.uid,
-          name: (authName.trim() || 'Cliente').slice(0, 120),
-          email: authEmail.trim().slice(0, 160),
-          phone: authPhone.trim().slice(0, 40),
-          company: authCompany.trim().slice(0, 120),
-          role: isOwnerAdmin ? 'admin' : 'client',
-          status: 'active',
-        };
-        setUserProfile(profileObj);
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: authName.trim(),
+            username: (authUsername.trim() || authEmail.trim().split('@')[0]).toLowerCase(),
+            email: authEmail.trim(),
+            phone: authPhone.trim(),
+            company: authCompany.trim(),
+            password: authPassword,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || 'Não foi possível concluir o cadastro.');
+        }
+        const registeredProfile = data.user as UserProfileRecord;
+        setUserProfile(registeredProfile);
+        localStorage.setItem('mx_auth_session', JSON.stringify(registeredProfile));
+
+        await triggerAutomatedNotification(
+          registeredProfile.uid,
+          registeredProfile.email,
+          registeredProfile.name,
+          'Boas-Vindas & Confirmação de Cadastro',
+          'Bem-vindo à Muatxissombo Soluções Digitais!',
+          `Olá ${registeredProfile.name}, o seu cadastro na Área do Cliente Muatxissombo foi concluído com sucesso (Utilizador: ${registeredProfile.username}). Já pode contratar websites, registar domínios, hospedagem e licenças originais.`
+        );
+
+        await refreshBackendStore(registeredProfile);
         setActiveView('client');
+        showToast(`Conta criada com sucesso! Bem-vindo(a), ${registeredProfile.name}.`);
       }
     } catch (err) {
       setAuthError(
         err instanceof Error
           ? err.message
-          : 'Erro na autenticação. Verifique o seu e-mail e palavra-passe ou utilize o Google Sign-In.'
+          : 'Erro na autenticação. Verifique os dados preenchidos.'
       );
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  // Standalone Admin Portal Login Handler (/admin)
+  const handleAdminPortalLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminLoginError('');
+    setAdminLoginLoading(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: adminLoginUser.trim(),
+          password: adminLoginPass,
+          requireAdmin: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Utilizador administrativo ou senha inválidos.');
+      }
+      const adminProf = data.user as UserProfileRecord;
+      setUserProfile(adminProf);
+      localStorage.setItem('mx_auth_session', JSON.stringify(adminProf));
+      await refreshBackendStore(adminProf);
+      setAdminLoginPass('');
+      setActiveView('admin');
+      showToast('Sessão iniciada no Painel Administrativo Muatxissombo.');
+    } catch (err) {
+      setAdminLoginError(
+        err instanceof Error ? err.message : 'Credenciais administrativas inválidas.'
+      );
+    } finally {
+      setAdminLoginLoading(false);
     }
   };
 
@@ -1001,22 +1285,20 @@ export default function App() {
       )}
 
       {/* TOP NAVIGATION BAR (Crisp Cloud & Digital Storefront Contract) */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 lg:px-8 h-[72px] flex items-center justify-between gap-6">
-        {/* Zone 1: Official Muatxissombo Logo */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 lg:px-8 h-20 flex items-center justify-between gap-6">
+        {/* Zone 1: Official Muatxissombo Logo (Enlarged, without redundant text word) */}
         <button
           type="button"
           onClick={() => navigateToSection('inicio')}
-          className="flex items-center gap-2.5 text-left whitespace-nowrap shrink-0 focus:outline-none"
+          className="flex items-center text-left whitespace-nowrap shrink-0 focus:outline-none py-1"
+          aria-label="Muatxissombo Soluções Digitais"
         >
           <img
-            src="/assets/aistudio/LOGO_MUATXISSOMBO-02_2ea0c22e.png"
+            src="/assets/aistudio/logo-header-trimmed.png"
             alt="Muatxissombo Soluções Digitais"
             referrerPolicy="no-referrer"
-            className="h-10 w-auto object-contain"
+            className="h-12 sm:h-14 lg:h-16 w-auto object-contain"
           />
-          <span className="text-base font-bold tracking-tight text-[#0A192F] hidden sm:inline">
-            Muatxissombo
-          </span>
         </button>
 
         {/* Zone 2: Clean Single-Line Store & Cloud Navigation Links */}
@@ -1080,17 +1362,30 @@ export default function App() {
           <button
             type="button"
             onClick={() => {
-              if (currentUser && userProfile) {
+              if (userProfile) {
                 setActiveView('client');
               } else {
+                setAuthMode('login');
                 setActiveView('auth');
               }
             }}
             className="hover:text-[#0B5ED7] transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 text-slate-800 font-semibold"
           >
             <User className="w-3.5 h-3.5 text-[#0B5ED7]" />
-            <span>{currentUser && userProfile ? 'Área do Cliente' : 'Entrar / Área do Cliente'}</span>
+            <span>{userProfile ? 'Área do Cliente' : 'Entrar'}</span>
           </button>
+          {!userProfile && (
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('register');
+                setActiveView('auth');
+              }}
+              className="px-3 py-1.5 bg-blue-50 text-[#0B5ED7] border border-blue-200 rounded-lg font-semibold hover:bg-blue-100 transition-colors whitespace-nowrap shrink-0"
+            >
+              Cadastrar Cliente
+            </button>
+          )}
           {userProfile?.role === 'admin' && (
             <button
               type="button"
@@ -1203,12 +1498,30 @@ export default function App() {
               type="button"
               onClick={() => {
                 setMobileMenuOpen(false);
-                setActiveView(currentUser && userProfile ? 'client' : 'auth');
+                if (userProfile) {
+                  setActiveView('client');
+                } else {
+                  setAuthMode('login');
+                  setActiveView('auth');
+                }
               }}
               className="text-left py-2 px-3 rounded-lg bg-slate-100 font-semibold text-slate-900"
             >
-              Área do Cliente
+              Área do Cliente (Entrar)
             </button>
+            {!userProfile && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setAuthMode('register');
+                  setActiveView('auth');
+                }}
+                className="text-left py-2 px-3 rounded-lg bg-blue-50 font-semibold text-[#0B5ED7]"
+              >
+                Cadastrar Novo Cliente
+              </button>
+            )}
             {userProfile?.role === 'admin' && (
               <button
                 type="button"
@@ -1225,8 +1538,8 @@ export default function App() {
         </div>
       )}
 
-      {/* VIEW SWITCHER: CLIENT DASHBOARD / ADMIN DASHBOARD / AUTH / PUBLIC STOREFRONT */}
-      {activeView === 'client' && currentUser && userProfile ? (
+      {/* VIEW SWITCHER: CLIENT DASHBOARD / ADMIN DASHBOARD / STANDALONE ADMIN LOGIN / AUTH / PUBLIC STOREFRONT */}
+      {activeView === 'client' && userProfile ? (
         <ClientDashboard
           profile={userProfile}
           orders={orders}
@@ -1238,81 +1551,148 @@ export default function App() {
           platformSettings={platformSettings}
           onUploadPaymentProof={async (orderId, proofName, proofRef, notes) => {
             try {
-              await updateDoc(doc(db, 'orders', orderId), {
-                paymentProofName: proofName.slice(0, 200),
-                paymentProofRef: proofRef.slice(0, 500),
-                paymentNotes: notes.slice(0, 500),
-                status: 'Pagamento em análise',
-                updatedAt: serverTimestamp(),
-              });
+              const targetOrd = orders.find((o) => o.id === orderId);
+              if (targetOrd) {
+                const updatedOrd: OrderRecord = {
+                  ...targetOrd,
+                  paymentProofName: proofName.slice(0, 200),
+                  paymentProofRef: proofRef.slice(0, 500),
+                  paymentNotes: notes.slice(0, 500),
+                  status: 'Pagamento em análise',
+                };
+                await upsertBackendStore('orders', orderId, updatedOrd);
+                setOrders((prev) => prev.map((o) => (o.id === orderId ? updatedOrd : o)));
+              }
+              if (currentUser?.emailVerified) {
+                await updateDoc(doc(db, 'orders', orderId), {
+                  paymentProofName: proofName.slice(0, 200),
+                  paymentProofRef: proofRef.slice(0, 500),
+                  paymentNotes: notes.slice(0, 500),
+                  status: 'Pagamento em análise',
+                  updatedAt: serverTimestamp(),
+                }).catch(() => null);
+              }
             } catch (err) {
-              handleFirestoreError(err, OperationType.UPDATE, `orders/${orderId}`);
+              console.error('Upload payment proof error:', err);
             }
           }}
           onUpdateProfile={async (data) => {
             try {
-              await updateDoc(doc(db, 'users', currentUser.uid), {
+              const updatedProfile: UserProfileRecord = {
+                ...userProfile,
                 name: data.name.slice(0, 120),
                 phone: data.phone.slice(0, 40),
                 company: data.company.slice(0, 120),
                 nif: data.nif.slice(0, 40),
                 address: data.address.slice(0, 250),
-                updatedAt: serverTimestamp(),
-              });
-              setUserProfile((prev) => (prev ? { ...prev, ...data } : null));
+              };
+              await upsertBackendStore('users', userProfile.uid, updatedProfile);
+              setUserProfile(updatedProfile);
+              localStorage.setItem('mx_auth_session', JSON.stringify(updatedProfile));
+
+              if (currentUser?.emailVerified) {
+                await updateDoc(doc(db, 'users', userProfile.uid), {
+                  name: data.name.slice(0, 120),
+                  phone: data.phone.slice(0, 40),
+                  company: data.company.slice(0, 120),
+                  nif: data.nif.slice(0, 40),
+                  address: data.address.slice(0, 250),
+                  updatedAt: serverTimestamp(),
+                }).catch(() => null);
+              }
             } catch (err) {
-              handleFirestoreError(err, OperationType.UPDATE, `users/${currentUser.uid}`);
+              console.error('Update profile error:', err);
             }
           }}
-          onChangePassword={async (newPass) => {
-            await updatePassword(currentUser, newPass);
+          onChangePassword={async (currentPass, newPass, newUsername) => {
+            const res = await fetch('/api/auth/change-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: userProfile.uid,
+                identifier: userProfile.username || userProfile.email,
+                currentPassword: currentPass,
+                newPassword: newPass,
+                newUsername,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              throw new Error(data.error || 'Não foi possível alterar a palavra-passe.');
+            }
+            const updatedUser = data.user as UserProfileRecord;
+            setUserProfile(updatedUser);
+            localStorage.setItem('mx_auth_session', JSON.stringify(updatedUser));
+            if (currentUser) {
+              await updatePassword(currentUser, newPass).catch(() => null);
+            }
           }}
           onSendSupportMessage={async (subject, message) => {
             const msgId = `sup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-            try {
+            const msgRecord: SupportMessageRecord = {
+              id: msgId,
+              userId: userProfile.uid,
+              userName: userProfile.name.slice(0, 120),
+              userEmail: userProfile.email.slice(0, 160),
+              senderRole: 'client',
+              subject: subject.slice(0, 160),
+              message: message.slice(0, 1500),
+              ticketStatus: 'Aberto',
+            };
+            await upsertBackendStore('support_messages', msgId, msgRecord);
+            setSupportMessages((prev) => [...prev, msgRecord]);
+
+            if (currentUser?.emailVerified) {
               await setDoc(doc(db, 'support_messages', msgId), {
-                userId: currentUser.uid,
-                userName: userProfile.name.slice(0, 120),
-                userEmail: userProfile.email.slice(0, 160),
-                senderRole: 'client',
-                subject: subject.slice(0, 160),
-                message: message.slice(0, 1500),
-                ticketStatus: 'Aberto',
+                ...msgRecord,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-              });
-            } catch (err) {
-              handleFirestoreError(err, OperationType.CREATE, `support_messages/${msgId}`);
+              }).catch(() => null);
             }
           }}
           onToggleDomainAutoRenew={async (domainId, autoRenew, nameservers) => {
-            try {
+            const targetDom = domainsRegistered.find((d) => d.id === domainId);
+            if (targetDom) {
+              const updatedDom: DomainRegisteredRecord = {
+                ...targetDom,
+                autoRenew,
+                nameservers: nameservers.slice(0, 250),
+              };
+              await upsertBackendStore('domains_registered', domainId, updatedDom);
+              setDomainsRegistered((prev) =>
+                prev.map((d) => (d.id === domainId ? updatedDom : d))
+              );
+            }
+            if (currentUser?.emailVerified) {
               await updateDoc(doc(db, 'domains_registered', domainId), {
                 autoRenew,
                 nameservers: nameservers.slice(0, 250),
                 updatedAt: serverTimestamp(),
-              });
-            } catch (err) {
-              handleFirestoreError(err, OperationType.UPDATE, `domains_registered/${domainId}`);
+              }).catch(() => null);
             }
           }}
           onSubmitFeedback={async (serviceCategory, rating, comment, projectReference) => {
             const fbId = `fb_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-            try {
+            const fbRecord: FeedbackPublicRecord = {
+              id: fbId,
+              userId: userProfile.uid,
+              clientName: userProfile.name.slice(0, 120),
+              companyName: (userProfile.company || 'Cliente Verificado').slice(0, 120),
+              serviceCategory: serviceCategory.slice(0, 80),
+              rating: Math.min(5, Math.max(1, rating)),
+              comment: comment.slice(0, 1000),
+              projectReference: projectReference.slice(0, 120),
+              isPublic: true,
+            };
+            await upsertBackendStore('feedbacks', fbId, fbRecord);
+            setPublicFeedbacks((prev) => [fbRecord, ...prev]);
+
+            if (currentUser?.emailVerified) {
               await setDoc(doc(db, 'feedbacks', fbId), {
-                userId: currentUser.uid,
-                clientName: userProfile.name.slice(0, 120),
-                companyName: (userProfile.company || 'Cliente Verificado').slice(0, 120),
-                serviceCategory: serviceCategory.slice(0, 80),
-                rating: Math.min(5, Math.max(1, rating)),
-                comment: comment.slice(0, 1000),
-                projectReference: projectReference.slice(0, 120),
-                isPublic: true,
+                ...fbRecord,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-              });
-            } catch (err) {
-              handleFirestoreError(err, OperationType.CREATE, `feedbacks/${fbId}`);
+              }).catch(() => null);
             }
           }}
           onRequestNewWebsite={() => {
@@ -1320,11 +1700,13 @@ export default function App() {
             setQuoteModalOpen(true);
           }}
           onLogout={async () => {
-            await signOut(auth);
+            localStorage.removeItem('mx_auth_session');
+            setUserProfile(null);
+            await signOut(auth).catch(() => null);
             setActiveView('public');
           }}
         />
-      ) : activeView === 'admin' && currentUser && userProfile?.role === 'admin' ? (
+      ) : activeView === 'admin' && userProfile?.role === 'admin' ? (
         <AdminDashboard
           adminProfile={userProfile}
           users={allUsers}
@@ -1339,82 +1721,117 @@ export default function App() {
           onUpdateUserStatus={async (uid, status, role, name, phone, company) => {
             const target = allUsers.find((u) => u.uid === uid);
             if (!target) return;
-            try {
+            const updatedUser: UserProfileRecord = {
+              ...target,
+              uid,
+              name: name.slice(0, 120),
+              phone: phone.slice(0, 40),
+              company: company.slice(0, 120),
+              role,
+              status,
+            };
+            await upsertBackendStore('users', uid, updatedUser);
+            setAllUsers((prev) => prev.map((u) => (u.uid === uid ? updatedUser : u)));
+
+            if (currentUser?.emailVerified) {
               await setDoc(
                 doc(db, 'users', uid),
                 {
-                  uid,
-                  name: name.slice(0, 120),
-                  email: target.email.slice(0, 160),
-                  phone: phone.slice(0, 40),
-                  company: company.slice(0, 120),
-                  role,
-                  status,
+                  ...updatedUser,
                   createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp(),
                 },
                 { merge: true }
-              );
-            } catch (err) {
-              handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
+              ).catch(() => null);
             }
           }}
           onSendPasswordReset={async (email) => {
-            await sendPasswordResetEmail(auth, email);
+            await fetch('/api/send-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                to: email,
+                subject: 'Redefinição de Credenciais – Muatxissombo Soluções Digitais',
+                eventType: 'Redefinição de Palavra-Passe',
+                bodyPreview: `O Administrador iniciou o procedimento de redefinição de palavra-passe para a sua conta (${email}).`,
+              }),
+            }).catch(() => null);
+            await sendPasswordResetEmail(auth, email).catch(() => null);
+          }}
+          onResetClientPassword={async (uid, identifier, newPassword) => {
+            const res = await fetch('/api/auth/change-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid,
+                identifier,
+                newPassword,
+                adminOverride: true,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              throw new Error(data.error || 'Não foi possível redefinir a senha do cliente.');
+            }
+            await refreshBackendStore(userProfile);
+          }}
+          onChangeAdminPassword={async (currentPass, newPass, newUsername) => {
+            const res = await fetch('/api/auth/change-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uid: userProfile.uid,
+                identifier: userProfile.username || userProfile.email || 'admin',
+                currentPassword: currentPass,
+                newPassword: newPass,
+                newUsername,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              throw new Error(data.error || 'Não foi possível alterar a senha do administrador.');
+            }
+            const updatedAdmin = data.user as UserProfileRecord;
+            setUserProfile(updatedAdmin);
+            localStorage.setItem('mx_auth_session', JSON.stringify(updatedAdmin));
           }}
           onSaveCatalogItem={async (item) => {
-            try {
-              await setDoc(doc(db, 'catalog_items', item.id), {
-                category: item.category,
-                subCategory: (item.subCategory || '').slice(0, 80),
-                name: item.name.slice(0, 140),
-                description: item.description.slice(0, 1000),
-                benefits: (item.benefits || []).slice(0, 10),
-                features: (item.features || []).slice(0, 15),
-                priceKz: Number(item.priceKz) || 0,
-                renewalPriceKz: Number(item.renewalPriceKz) || 0,
-                billingCycle: (item.billingCycle || 'Anual').slice(0, 40),
-                validityPeriod: (item.validityPeriod || '').slice(0, 60),
-                devicesCount: (item.devicesCount || '').slice(0, 60),
-                licenseType: (item.licenseType || '').slice(0, 80),
-                available: Boolean(item.available),
-                popular: Boolean(item.popular),
-                promoBadge: (item.promoBadge || '').slice(0, 60),
+            const normalized = normalizeDomainCatalogPrices([item])[0];
+            await upsertBackendStore('catalog_items', normalized.id, normalized);
+            setCatalogItems((prev) => {
+              const exists = prev.some((i) => i.id === normalized.id);
+              return exists
+                ? prev.map((i) => (i.id === normalized.id ? normalized : i))
+                : [...prev, normalized];
+            });
+
+            if (currentUser?.emailVerified) {
+              await setDoc(doc(db, 'catalog_items', normalized.id), {
+                ...normalized,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-              });
-            } catch (err) {
-              handleFirestoreError(err, OperationType.WRITE, `catalog_items/${item.id}`);
+              }).catch(() => null);
             }
           }}
           onDeleteCatalogItem={async (itemId) => {
-            try {
-              await deleteDoc(doc(db, 'catalog_items', itemId));
-            } catch (err) {
-              handleFirestoreError(err, OperationType.DELETE, `catalog_items/${itemId}`);
+            await upsertBackendStore('catalog_items', itemId, null, 'delete');
+            setCatalogItems((prev) => prev.filter((i) => i.id !== itemId));
+            if (currentUser?.emailVerified) {
+              await deleteDoc(doc(db, 'catalog_items', itemId)).catch(() => null);
             }
           }}
           onSeedDefaultCatalog={async () => {
-            for (const item of INITIAL_CATALOG_ITEMS) {
-              await setDoc(doc(db, 'catalog_items', item.id), {
-                category: item.category,
-                subCategory: (item.subCategory || '').slice(0, 80),
-                name: item.name.slice(0, 140),
-                description: item.description.slice(0, 1000),
-                benefits: (item.benefits || []).slice(0, 10),
-                features: (item.features || []).slice(0, 15),
-                priceKz: item.priceKz,
-                renewalPriceKz: item.renewalPriceKz || 0,
-                billingCycle: (item.billingCycle || 'Anual').slice(0, 40),
-                validityPeriod: (item.validityPeriod || '').slice(0, 60),
-                devicesCount: (item.devicesCount || '').slice(0, 60),
-                licenseType: (item.licenseType || '').slice(0, 80),
-                available: item.available,
-                popular: Boolean(item.popular),
-                promoBadge: (item.promoBadge || '').slice(0, 60),
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              });
+            const normalizedDefaults = normalizeDomainCatalogPrices(INITIAL_CATALOG_ITEMS);
+            setCatalogItems(normalizedDefaults);
+            for (const item of normalizedDefaults) {
+              await upsertBackendStore('catalog_items', item.id, item);
+              if (currentUser?.emailVerified) {
+                await setDoc(doc(db, 'catalog_items', item.id), {
+                  ...item,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                }).catch(() => null);
+              }
             }
           }}
           onUpdateOrder={async (
@@ -1427,82 +1844,104 @@ export default function App() {
             userId,
             orderNumber
           ) => {
-            try {
+            const targetOrd = orders.find((o) => o.id === orderId);
+            if (targetOrd) {
+              const updatedOrd: OrderRecord = {
+                ...targetOrd,
+                status,
+                assignedTo: assignedTo.slice(0, 120),
+                adminNotes: adminNotes.slice(0, 1000),
+              };
+              await upsertBackendStore('orders', orderId, updatedOrd);
+              setOrders((prev) => prev.map((o) => (o.id === orderId ? updatedOrd : o)));
+            }
+
+            if (currentUser?.emailVerified) {
               await updateDoc(doc(db, 'orders', orderId), {
                 status,
                 assignedTo: assignedTo.slice(0, 120),
                 adminNotes: adminNotes.slice(0, 1000),
                 updatedAt: serverTimestamp(),
-              });
-
-              await triggerAutomatedNotification(
-                userId,
-                customerEmail,
-                customerName,
-                status === 'Pagamento confirmado'
-                  ? 'Confirmação de Pagamento Validado'
-                  : status === 'Concluído'
-                  ? 'Serviço Concluído'
-                  : 'Atualização de Estado de Encomenda',
-                `Encomenda ${orderNumber}: ${status} – Muatxissombo`,
-                `Olá ${customerName}, o estado da sua encomenda ${orderNumber} foi atualizado para "${status}". ${
-                  adminNotes ? `Observação: ${adminNotes}` : ''
-                }`
-              );
-            } catch (err) {
-              handleFirestoreError(err, OperationType.UPDATE, `orders/${orderId}`);
+              }).catch(() => null);
             }
+
+            await triggerAutomatedNotification(
+              userId,
+              customerEmail,
+              customerName,
+              status === 'Pagamento confirmado'
+                ? 'Confirmação de Pagamento Validado'
+                : status === 'Concluído'
+                ? 'Serviço Concluído'
+                : 'Atualização de Estado de Encomenda',
+              `Encomenda ${orderNumber}: ${status} – Muatxissombo`,
+              `Olá ${customerName}, o estado da sua encomenda ${orderNumber} foi atualizado para "${status}". ${
+                adminNotes ? `Observação: ${adminNotes}` : ''
+              }`
+            );
           }}
           onUpdateWebsiteProject={async (projectId, updates) => {
             const target = websiteProjects.find((p) => p.id === projectId);
             if (!target) return;
-            try {
+            const updatedProj: WebsiteProjectRecord = {
+              ...target,
+              ...updates,
+            };
+            await upsertBackendStore('website_projects', projectId, updatedProj);
+            setWebsiteProjects((prev) =>
+              prev.map((p) => (p.id === projectId ? updatedProj : p))
+            );
+
+            if (currentUser?.emailVerified) {
               await updateDoc(doc(db, 'website_projects', projectId), {
                 ...updates,
                 updatedAt: serverTimestamp(),
-              });
-
-              await triggerAutomatedNotification(
-                target.userId,
-                target.clientEmail,
-                target.clientName,
-                updates.devStatus === 'Concluído & Publicado'
-                  ? 'Entrega Final de Website Publicado'
-                  : `Etapa de Website Atualizada: ${updates.devStatus}`,
-                `Projeto ${target.projectName} – Etapa: ${updates.devStatus}`,
-                `Olá ${target.clientName}, o desenvolvimento do seu website "${
-                  target.projectName
-                }" avançou para a etapa "${updates.devStatus}" (${updates.progressPercent}% concluído). ${
-                  updates.demoLink ? `Link de Demonstração: ${updates.demoLink}. ` : ''
-                }${updates.publishedLink ? `Website Oficial: ${updates.publishedLink}. ` : ''}${
-                  updates.accessInstructions ? `Instruções: ${updates.accessInstructions}` : ''
-                }`
-              );
-            } catch (err) {
-              handleFirestoreError(err, OperationType.UPDATE, `website_projects/${projectId}`);
+              }).catch(() => null);
             }
+
+            await triggerAutomatedNotification(
+              target.userId,
+              target.clientEmail,
+              target.clientName,
+              updates.devStatus === 'Concluído & Publicado'
+                ? 'Entrega Final de Website Publicado'
+                : `Etapa de Website Atualizada: ${updates.devStatus}`,
+              `Projeto ${target.projectName} – Etapa: ${updates.devStatus}`,
+              `Olá ${target.clientName}, o desenvolvimento do seu website "${
+                target.projectName
+              }" avançou para a etapa "${updates.devStatus}" (${updates.progressPercent}% concluído). ${
+                updates.demoLink ? `Link de Demonstração: ${updates.demoLink}. ` : ''
+              }${updates.publishedLink ? `Website Oficial: ${updates.publishedLink}. ` : ''}${
+                updates.accessInstructions ? `Instruções: ${updates.accessInstructions}` : ''
+              }`
+            );
           }}
           onIssueLicense={async (payload) => {
             const licId = `lic_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-            try {
+            const licRecord: LicenseIssuedRecord = {
+              id: licId,
+              ...payload,
+            };
+            await upsertBackendStore('licenses_issued', licId, licRecord);
+            setLicensesIssued((prev) => [licRecord, ...prev]);
+
+            if (currentUser?.emailVerified) {
               await setDoc(doc(db, 'licenses_issued', licId), {
                 ...payload,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-              });
+              }).catch(() => null);
+            }
 
-              if (payload.assignedUserEmail && payload.assignedUserName) {
-                await triggerAutomatedNotification(
-                  payload.assignedUserId,
-                  payload.assignedUserEmail,
-                  payload.assignedUserName,
-                  'Entrega Privada de Licença de Software Original',
-                  `A Sua Licença ${payload.productName} Está Disponível – Muatxissombo`,
-                  `Olá ${payload.assignedUserName}, o seu pagamento foi validado e a sua licença original "${payload.productName}" (Validade: ${payload.validityPeriod}) foi disponibilizada na secção "Minhas Licenças" da sua Área do Cliente juntamente com as instruções de ativação.`
-                );
-              }
-            } catch (err) {
-              handleFirestoreError(err, OperationType.CREATE, `licenses_issued/${licId}`);
+            if (payload.assignedUserEmail && payload.assignedUserName) {
+              await triggerAutomatedNotification(
+                payload.assignedUserId,
+                payload.assignedUserEmail,
+                payload.assignedUserName,
+                'Entrega Privada de Licença de Software Original',
+                `A Sua Licença ${payload.productName} Está Disponível – Muatxissombo`,
+                `Olá ${payload.assignedUserName}, o seu pagamento foi validado e a sua licença original "${payload.productName}" (Validade: ${payload.validityPeriod}) foi disponibilizada na secção "Minhas Licenças" da sua Área do Cliente juntamente com as instruções de ativação.`
+              );
             }
           }}
           onReplySupportMessage={async (
@@ -1514,26 +1953,39 @@ export default function App() {
             ticketId
           ) => {
             const replyId = `sup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-            try {
+            const replyRecord: SupportMessageRecord = {
+              id: replyId,
+              userId: targetUserId,
+              userName: targetUserName.slice(0, 120),
+              userEmail: targetUserEmail.slice(0, 160),
+              senderRole: 'admin',
+              subject: subject.slice(0, 160),
+              message: message.slice(0, 1500),
+              ticketStatus: 'Em Atendimento',
+            };
+            await upsertBackendStore('support_messages', replyId, replyRecord);
+            setSupportMessages((prev) => [...prev, replyRecord]);
+
+            if (ticketId) {
+              const orig = supportMessages.find((m) => m.id === ticketId);
+              if (orig) {
+                const updatedOrig = { ...orig, ticketStatus: 'Resolvido' };
+                await upsertBackendStore('support_messages', ticketId, updatedOrig);
+              }
+            }
+
+            if (currentUser?.emailVerified) {
               await setDoc(doc(db, 'support_messages', replyId), {
-                userId: targetUserId,
-                userName: targetUserName.slice(0, 120),
-                userEmail: targetUserEmail.slice(0, 160),
-                senderRole: 'admin',
-                subject: subject.slice(0, 160),
-                message: message.slice(0, 1500),
-                ticketStatus: 'Em Atendimento',
+                ...replyRecord,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-              });
+              }).catch(() => null);
               if (ticketId) {
                 await updateDoc(doc(db, 'support_messages', ticketId), {
                   ticketStatus: 'Resolvido',
                   updatedAt: serverTimestamp(),
-                });
+                }).catch(() => null);
               }
-            } catch (err) {
-              handleFirestoreError(err, OperationType.CREATE, `support_messages/${replyId}`);
             }
           }}
           onResendNotification={async (notif) => {
@@ -1547,21 +1999,119 @@ export default function App() {
             );
           }}
           onSavePlatformSettings={async (newSettings) => {
-            try {
+            await upsertBackendStore('platform_settings', 'main', newSettings);
+            setPlatformSettings(newSettings);
+            if (currentUser?.emailVerified) {
               await setDoc(doc(db, 'platform_settings', 'main'), {
                 ...newSettings,
                 updatedAt: serverTimestamp(),
-              });
-              setPlatformSettings(newSettings);
-            } catch (err) {
-              handleFirestoreError(err, OperationType.WRITE, 'platform_settings/main');
+              }).catch(() => null);
             }
           }}
           onLogout={async () => {
-            await signOut(auth);
+            localStorage.removeItem('mx_auth_session');
+            setUserProfile(null);
+            await signOut(auth).catch(() => null);
             setActiveView('public');
           }}
         />
+      ) : activeView === 'admin' ? (
+        /* STANDALONE SEPARATE ADMIN LOGIN PORTAL (/admin or ?painel=admin) WITH USER & PASSWORD */
+        <div className="flex-1 bg-[#071426] py-14 px-4 lg:px-8 flex items-center justify-center">
+          <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-slate-900 text-white p-6 space-y-3 border-b border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono-tabular uppercase tracking-wider text-[#28A9E0] font-semibold">
+                  Acesso Exclusivo · Link Separado (/admin)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigateToSection('inicio')}
+                  className="text-xs text-slate-400 hover:text-white inline-flex items-center gap-1"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Loja
+                </button>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="bg-white p-2 rounded-xl">
+                  <img
+                    src="/favicon-icon.png"
+                    alt="Ícone Muatxissombo"
+                    className="w-9 h-9 object-contain"
+                  />
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-white leading-tight">
+                    Painel Administrativo
+                  </h1>
+                  <p className="text-xs text-slate-400">
+                    Autenticação por Utilizador (User) e Palavra-Passe
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleAdminPortalLogin} className="p-6 space-y-4 text-xs">
+              {adminLoginError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 font-medium">
+                  {adminLoginError}
+                </div>
+              )}
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1.5">
+                  Utilizador Administrativo (User ou E-mail) *
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    value={adminLoginUser}
+                    onChange={(e) => setAdminLoginUser(e.target.value)}
+                    placeholder="admin"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-[#F4F7FB] border border-slate-300 rounded-xl focus:bg-white focus:border-[#0B5ED7] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1.5">
+                  Palavra-Passe Administrativa (Senha) *
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    required
+                    value={adminLoginPass}
+                    onChange={(e) => setAdminLoginPass(e.target.value)}
+                    placeholder="Introduza a senha do administrador"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-[#F4F7FB] border border-slate-300 rounded-xl focus:bg-white focus:border-[#0B5ED7] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={adminLoginLoading}
+                className="w-full py-3 bg-[#0B5ED7] text-white font-semibold rounded-xl hover:bg-[#094bb0] transition-colors shadow-sm disabled:opacity-50"
+              >
+                {adminLoginLoading
+                  ? 'A Verificar Credenciais...'
+                  : 'Entrar no Painel Administrativo'}
+              </button>
+
+              <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
+                <div>
+                  Após iniciar sessão, pode alterar o seu <strong>Utilizador (User)</strong> e a sua{' '}
+                  <strong>Palavra-Passe (Senha)</strong> no menu{' '}
+                  <strong>Alterar Senha &amp; Links</strong>.
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : activeView === 'auth' ? (
         /* ANGOCLOUD / WHMCS-INSPIRED CLIENT LOGIN & PORTAL AUTHENTICATION */
         <div className="flex-1 bg-[#F4F7FB] py-12 px-4 lg:px-8 flex items-center justify-center">
@@ -1729,18 +2279,33 @@ export default function App() {
               <form onSubmit={handleEmailAuth} className="space-y-4 text-xs">
                 {authMode === 'register' && (
                   <>
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1.5">
-                        Nome Completo ou Empresa *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={authName}
-                        onChange={(e) => setAuthName(e.target.value)}
-                        placeholder="Ex.: Eng. Manuel Domingos"
-                        className="w-full px-3.5 py-2.5 bg-[#F4F7FB] border border-slate-300 rounded-xl focus:bg-white focus:border-[#0B5ED7] focus:outline-none"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1.5">
+                          Nome Completo ou Empresa *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={authName}
+                          onChange={(e) => setAuthName(e.target.value)}
+                          placeholder="Ex.: Eng. Manuel Domingos"
+                          className="w-full px-3.5 py-2.5 bg-[#F4F7FB] border border-slate-300 rounded-xl focus:bg-white focus:border-[#0B5ED7] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1.5">
+                          Utilizador de Acesso (User) *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={authUsername}
+                          onChange={(e) => setAuthUsername(e.target.value)}
+                          placeholder="Ex.: manuel.domingos"
+                          className="w-full px-3.5 py-2.5 bg-[#F4F7FB] border border-slate-300 rounded-xl focus:bg-white focus:border-[#0B5ED7] focus:outline-none"
+                        />
+                      </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
@@ -1771,16 +2336,22 @@ export default function App() {
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1.5">
-                    Endereço de E-mail *
+                    {authMode === 'login'
+                      ? 'Utilizador (User) ou Endereço de E-mail *'
+                      : 'Endereço de E-mail *'}
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
-                      type="email"
+                      type={authMode === 'login' ? 'text' : 'email'}
                       required
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder="cliente@empresa.co.ao"
+                      placeholder={
+                        authMode === 'login'
+                          ? 'utilizador ou cliente@empresa.co.ao'
+                          : 'cliente@empresa.co.ao'
+                      }
                       className="w-full pl-10 pr-3.5 py-2.5 bg-[#F4F7FB] border border-slate-300 rounded-xl focus:bg-white focus:border-[#0B5ED7] focus:outline-none"
                     />
                   </div>
@@ -1932,7 +2503,7 @@ export default function App() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveView(currentUser && userProfile ? 'client' : 'auth')}
+                      onClick={() => setActiveView(userProfile ? 'client' : 'auth')}
                       className="px-4 py-3 bg-white/10 text-white border border-white/20 text-xs sm:text-sm font-medium rounded-xl hover:bg-white/15 transition-colors whitespace-nowrap shrink-0"
                     >
                       Área do Cliente
@@ -2883,29 +3454,37 @@ export default function App() {
                 <form
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    if (!currentUser || !userProfile) {
+                    if (!userProfile) {
                       setActiveView('auth');
-                      setAuthMessage('Inicie sessão para publicar a sua avaliação de cliente.');
+                      setAuthMessage('Inicie sessão ou crie conta para publicar a sua avaliação de cliente.');
                       return;
                     }
                     if (!publicFbComment.trim()) return;
                     const fbId = `fb_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                    const fbRecord: FeedbackPublicRecord = {
+                      id: fbId,
+                      userId: userProfile.uid,
+                      clientName: userProfile.name.slice(0, 120),
+                      companyName: (userProfile.company || 'Cliente Verificado').slice(0, 120),
+                      serviceCategory: publicFbCategory,
+                      rating: publicFbRating,
+                      comment: publicFbComment.trim().slice(0, 1000),
+                      isPublic: true,
+                    };
                     try {
-                      await setDoc(doc(db, 'feedbacks', fbId), {
-                        userId: currentUser.uid,
-                        clientName: userProfile.name.slice(0, 120),
-                        companyName: (userProfile.company || 'Cliente Verificado').slice(0, 120),
-                        serviceCategory: publicFbCategory,
-                        rating: publicFbRating,
-                        comment: publicFbComment.trim().slice(0, 1000),
-                        isPublic: true,
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp(),
-                      });
+                      await upsertBackendStore('feedbacks', fbId, fbRecord);
+                      setPublicFeedbacks((prev) => [fbRecord, ...prev]);
+                      if (currentUser?.emailVerified) {
+                        await setDoc(doc(db, 'feedbacks', fbId), {
+                          ...fbRecord,
+                          createdAt: serverTimestamp(),
+                          updatedAt: serverTimestamp(),
+                        }).catch(() => null);
+                      }
                       setPublicFbComment('');
                       showToast('Obrigado! A sua avaliação foi publicada com sucesso.');
                     } catch (err) {
-                      handleFirestoreError(err, OperationType.CREATE, `feedbacks/${fbId}`);
+                      console.error('Feedback error:', err);
                     }
                   }}
                   className="space-y-3 text-xs"
@@ -3359,7 +3938,7 @@ export default function App() {
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setActiveView(currentUser && userProfile ? 'client' : 'auth')}
+                  onClick={() => setActiveView(userProfile ? 'client' : 'auth')}
                   className="px-3.5 py-2 bg-[#0B5ED7] text-white font-semibold rounded-lg hover:bg-[#094bb0] transition-colors"
                 >
                   Aceder à Área do Cliente
@@ -3611,31 +4190,39 @@ export default function App() {
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!widgetMessage.trim()) return;
-                if (!currentUser || !userProfile) {
+                if (!userProfile) {
                   setChatWidgetOpen(false);
                   setActiveView('auth');
                   setAuthMessage(
-                    'Inicie sessão para registar o seu ticket no chat de suporte 24/7 ou fale connosco diretamente no WhatsApp.'
+                    'Inicie sessão ou crie conta para registar o seu ticket no chat de suporte 24/7 ou fale connosco diretamente no WhatsApp.'
                   );
                   return;
                 }
                 const msgId = `sup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                const msgRecord: SupportMessageRecord = {
+                  id: msgId,
+                  userId: userProfile.uid,
+                  userName: userProfile.name.slice(0, 120),
+                  userEmail: userProfile.email.slice(0, 160),
+                  senderRole: 'client',
+                  subject: 'Chat de Suporte 24/7',
+                  message: widgetMessage.trim().slice(0, 1500),
+                  ticketStatus: 'Aberto',
+                };
                 try {
-                  await setDoc(doc(db, 'support_messages', msgId), {
-                    userId: currentUser.uid,
-                    userName: userProfile.name.slice(0, 120),
-                    userEmail: userProfile.email.slice(0, 160),
-                    senderRole: 'client',
-                    subject: 'Chat de Suporte 24/7',
-                    message: widgetMessage.trim().slice(0, 1500),
-                    ticketStatus: 'Aberto',
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
-                  });
+                  await upsertBackendStore('support_messages', msgId, msgRecord);
+                  setSupportMessages((prev) => [...prev, msgRecord]);
+                  if (currentUser?.emailVerified) {
+                    await setDoc(doc(db, 'support_messages', msgId), {
+                      ...msgRecord,
+                      createdAt: serverTimestamp(),
+                      updatedAt: serverTimestamp(),
+                    }).catch(() => null);
+                  }
                   setWidgetMessage('');
                   showToast('Mensagem enviada para o suporte técnico 24/7!');
                 } catch (err) {
-                  handleFirestoreError(err, OperationType.CREATE, `support_messages/${msgId}`);
+                  console.error('Support widget error:', err);
                 }
               }}
               className="p-3 bg-white border-t border-slate-200 space-y-2"
