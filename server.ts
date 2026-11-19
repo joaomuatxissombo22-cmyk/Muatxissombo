@@ -1,6 +1,25 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { createServer as createViteServer, build as viteBuild } from 'vite';
+
+const __filename = fileURLToPath(import.meta.url);
+const ROOT_DIR = path.dirname(__filename);
+
+async function ensureProductionBuild(distIndexHtml: string): Promise<boolean> {
+  if (fs.existsSync(distIndexHtml)) {
+    return true;
+  }
+  try {
+    console.log('Production build not found in dist/. Running Vite build automatically...');
+    await viteBuild({ root: ROOT_DIR });
+    return fs.existsSync(distIndexHtml);
+  } catch (err) {
+    console.error('Automatic Vite build failed, falling back to Vite middleware:', err);
+    return false;
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -13,7 +32,6 @@ async function startServer() {
   });
 
   // Real Domain DNS & RDAP Availability Verification Endpoint
-  // Strictly adheres to requirement: "Não apresentar domínios como disponíveis sem uma consulta real ao fornecedor ou registrador."
   app.get('/api/domain-check', async (req, res) => {
     const rawDomain = String(req.query.domain || '').trim().toLowerCase();
     if (!rawDomain || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(rawDomain)) {
@@ -23,7 +41,6 @@ async function startServer() {
     }
 
     try {
-      // Perform real DNS-over-HTTPS (DoH) lookup against Google Public DNS for NS and A records
       const [nsResp, aResp] = await Promise.all([
         fetch(`https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=NS`),
         fetch(`https://dns.google/resolve?name=${encodeURIComponent(rawDomain)}&type=A`),
@@ -91,7 +108,8 @@ async function startServer() {
         verifiedVia: 'Falha de Rede na Consulta Externa',
         registrarConfigured: false,
         canAddToCart: false,
-        message: 'Não foi possível contactar o servidor DNS/Registrador em tempo real. Por segurança, não apresentamos disponibilidade simulada.',
+        message:
+          'Não foi possível contactar o servidor DNS/Registrador em tempo real. Por segurança, não apresentamos disponibilidade simulada.',
       });
     }
   });
@@ -103,7 +121,9 @@ async function startServer() {
       return res.status(400).json({ error: 'Destinatário e assunto são obrigatórios.' });
     }
 
-    const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    const smtpConfigured = Boolean(
+      process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+    );
     return res.json({
       success: true,
       smtpConfigured,
@@ -179,8 +199,32 @@ async function startServer() {
     );
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  // Always serve unbundled image assets from src/assets and public/assets regardless of cwd
+  const srcAssetsPath = path.join(ROOT_DIR, 'src', 'assets');
+  const publicPath = path.join(ROOT_DIR, 'public');
+  if (fs.existsSync(srcAssetsPath)) {
+    app.use('/src/assets', express.static(srcAssetsPath));
+  }
+  if (fs.existsSync(publicPath)) {
+    app.use(express.static(publicPath));
+  }
+
+  const distPath = path.join(ROOT_DIR, 'dist');
+  const distIndexHtml = path.join(distPath, 'index.html');
+
+  let useStaticDist = false;
+  if (process.env.NODE_ENV === 'production') {
+    useStaticDist = await ensureProductionBuild(distIndexHtml);
+  }
+
+  if (useStaticDist) {
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      res.sendFile(distIndexHtml);
+    });
+  } else {
     const vitePromise = createViteServer({
+      root: ROOT_DIR,
       server: { middlewareMode: true },
       appType: 'spa',
     });
@@ -192,12 +236,6 @@ async function startServer() {
       } catch (err) {
         next(err);
       }
-    });
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
