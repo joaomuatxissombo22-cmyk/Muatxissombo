@@ -1,0 +1,6 @@
+{
+  "name": "Muatxissombo Soluções Digitais",
+  "description": "Plataforma comercial de criação de websites profissionais, registo de domínios, alojamento web, licenças originais Microsoft 365, antivírus e assistência informática em Luanda, Angola.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

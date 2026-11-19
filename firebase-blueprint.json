@@ -1,0 +1,350 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered customer or administrator account.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "company": { "type": "string", "maxLength": 120 },
+        "nif": { "type": "string", "maxLength": 40 },
+        "address": { "type": "string", "maxLength": 250 },
+        "role": { "type": "string", "enum": ["client", "admin"], "maxLength": 20 },
+        "status": { "type": "string", "enum": ["active", "suspended"], "maxLength": 20 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "role", "status", "createdAt", "updatedAt"]
+    },
+    "CatalogItem": {
+      "title": "CatalogItem",
+      "description": "Editable product or service in the store catalog (Websites, Hosting, Software Licenses, IT Assistance, Domain TLDs).",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["website", "hosting", "license", "assistance", "domain_tld"], "maxLength": 30 },
+        "subCategory": { "type": "string", "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "benefits": { "type": "array", "description": "Up to 10 key benefits" },
+        "features": { "type": "array", "description": "Up to 15 technical specifications" },
+        "priceKz": { "type": "number" },
+        "renewalPriceKz": { "type": "number" },
+        "billingCycle": { "type": "string", "maxLength": 40 },
+        "validityPeriod": { "type": "string", "maxLength": 60 },
+        "devicesCount": { "type": "string", "maxLength": 60 },
+        "licenseType": { "type": "string", "maxLength": 80 },
+        "available": { "type": "boolean" },
+        "popular": { "type": "boolean" },
+        "promoBadge": { "type": "string", "maxLength": 60 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "name", "description", "priceKz", "available", "createdAt", "updatedAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order for websites, domains, hosting, software licenses, or IT assistance.",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string", "maxLength": 40 },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "customerEmail": { "type": "string", "maxLength": 160 },
+        "customerPhone": { "type": "string", "maxLength": 40 },
+        "customerCompany": { "type": "string", "maxLength": 120 },
+        "itemsSummary": { "type": "string", "maxLength": 1500 },
+        "category": { "type": "string", "maxLength": 50 },
+        "totalKz": { "type": "number" },
+        "paymentMethod": { "type": "string", "maxLength": 60 },
+        "paymentProofName": { "type": "string", "maxLength": 200 },
+        "paymentProofRef": { "type": "string", "maxLength": 500 },
+        "paymentNotes": { "type": "string", "maxLength": 500 },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Aguardando pagamento",
+            "Pagamento em análise",
+            "Pagamento confirmado",
+            "Em processamento",
+            "Em execução",
+            "Aguardando informações do cliente",
+            "Concluído",
+            "Cancelado"
+          ],
+          "maxLength": 60
+        },
+        "assignedTo": { "type": "string", "maxLength": 120 },
+        "adminNotes": { "type": "string", "maxLength": 1000 },
+        "invoiceNumber": { "type": "string", "maxLength": 60 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "orderNumber",
+        "userId",
+        "customerName",
+        "customerEmail",
+        "itemsSummary",
+        "category",
+        "totalKz",
+        "paymentMethod",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WebsiteProject": {
+      "title": "WebsiteProject",
+      "description": "Website quote request and development tracking record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clientName": { "type": "string", "maxLength": 120 },
+        "clientEmail": { "type": "string", "maxLength": 160 },
+        "clientPhone": { "type": "string", "maxLength": 40 },
+        "companyName": { "type": "string", "maxLength": 120 },
+        "websiteType": { "type": "string", "maxLength": 120 },
+        "projectName": { "type": "string", "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "desiredFeatures": { "type": "string", "maxLength": 1000 },
+        "availableBudgetKz": { "type": "number" },
+        "desiredDomain": { "type": "string", "maxLength": 120 },
+        "needsHosting": { "type": "boolean" },
+        "referenceNotes": { "type": "string", "maxLength": 500 },
+        "contractDate": { "type": "string", "maxLength": 40 },
+        "estimatedDeadline": { "type": "string", "maxLength": 40 },
+        "assignedLead": { "type": "string", "maxLength": 120 },
+        "devStatus": {
+          "type": "string",
+          "enum": [
+            "Orçamento Solicitado",
+            "Em Análise",
+            "Proposta Enviada",
+            "Aguardando Pagamento",
+            "Design & Prototipagem",
+            "Em Desenvolvimento",
+            "Testes & Revisão",
+            "Concluído & Publicado",
+            "Cancelado"
+          ],
+          "maxLength": 60
+        },
+        "progressPercent": { "type": "number" },
+        "demoLink": { "type": "string", "maxLength": 300 },
+        "publishedLink": { "type": "string", "maxLength": 300 },
+        "accessInstructions": { "type": "string", "maxLength": 1000 },
+        "internalNotes": { "type": "string", "maxLength": 1000 },
+        "quotedPriceKz": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "clientName",
+        "clientEmail",
+        "clientPhone",
+        "companyName",
+        "websiteType",
+        "projectName",
+        "description",
+        "devStatus",
+        "progressPercent",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LicenseIssued": {
+      "title": "LicenseIssued",
+      "description": "Original software license registered by admin and privately delivered to a specific customer.",
+      "type": "object",
+      "properties": {
+        "productName": { "type": "string", "maxLength": 140 },
+        "supplier": { "type": "string", "maxLength": 120 },
+        "licenseType": { "type": "string", "maxLength": 80 },
+        "validityPeriod": { "type": "string", "maxLength": 60 },
+        "devicesCount": { "type": "string", "maxLength": 40 },
+        "activationKey": { "type": "string", "maxLength": 250 },
+        "activationInstructions": { "type": "string", "maxLength": 1500 },
+        "assignedUserId": { "type": "string", "maxLength": 128 },
+        "assignedUserEmail": { "type": "string", "maxLength": 160 },
+        "assignedUserName": { "type": "string", "maxLength": 120 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["Disponível em Stock", "Atribuída ao Cliente", "Expirada"], "maxLength": 40 },
+        "deliveredAt": { "type": "string", "maxLength": 60 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "productName",
+        "supplier",
+        "licenseType",
+        "validityPeriod",
+        "activationKey",
+        "activationInstructions",
+        "assignedUserId",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DomainRegistered": {
+      "title": "DomainRegistered",
+      "description": "Domain purchased and managed for a client.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clientName": { "type": "string", "maxLength": 120 },
+        "clientEmail": { "type": "string", "maxLength": 160 },
+        "domainName": { "type": "string", "maxLength": 140 },
+        "tld": { "type": "string", "maxLength": 30 },
+        "registrationPriceKz": { "type": "number" },
+        "renewalPriceKz": { "type": "number" },
+        "registeredAt": { "type": "string", "maxLength": 40 },
+        "expiresAt": { "type": "string", "maxLength": 40 },
+        "autoRenew": { "type": "boolean" },
+        "nameservers": { "type": "string", "maxLength": 250 },
+        "status": { "type": "string", "enum": ["Pendente", "Ativo", "A Expirar", "Expirado"], "maxLength": 30 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "clientName",
+        "clientEmail",
+        "domainName",
+        "tld",
+        "registrationPriceKz",
+        "renewalPriceKz",
+        "expiresAt",
+        "autoRenew",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "24/7 technical support chat and ticket message between client and admin.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "maxLength": 120 },
+        "userEmail": { "type": "string", "maxLength": 160 },
+        "senderRole": { "type": "string", "enum": ["client", "admin"], "maxLength": 20 },
+        "subject": { "type": "string", "maxLength": 160 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1500 },
+        "ticketStatus": { "type": "string", "enum": ["Aberto", "Em Atendimento", "Resolvido"], "maxLength": 30 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "userEmail", "senderRole", "subject", "message", "ticketStatus", "createdAt", "updatedAt"]
+    },
+    "NotificationRecord": {
+      "title": "NotificationRecord",
+      "description": "Email and in-app notification log sent to a client.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recipientEmail": { "type": "string", "maxLength": 160 },
+        "recipientName": { "type": "string", "maxLength": 120 },
+        "eventType": { "type": "string", "maxLength": 80 },
+        "subject": { "type": "string", "maxLength": 200 },
+        "bodyPreview": { "type": "string", "maxLength": 1500 },
+        "deliveryChannel": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["Enviado", "Pendente", "Reenviado"], "maxLength": 30 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "recipientEmail", "recipientName", "eventType", "subject", "bodyPreview", "deliveryChannel", "status", "createdAt", "updatedAt"]
+    },
+    "FeedbackEntry": {
+      "title": "FeedbackEntry",
+      "description": "Customer feedback and rating on service quality.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clientName": { "type": "string", "maxLength": 120 },
+        "companyName": { "type": "string", "maxLength": 120 },
+        "serviceCategory": { "type": "string", "maxLength": 80 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "projectReference": { "type": "string", "maxLength": 120 },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "clientName", "serviceCategory", "rating", "comment", "isPublic", "createdAt", "updatedAt"]
+    },
+    "PlatformSetting": {
+      "title": "PlatformSetting",
+      "description": "Global platform configuration managed by the administrator.",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string", "maxLength": 120 },
+        "phoneWhatsapp": { "type": "string", "maxLength": 40 },
+        "address": { "type": "string", "maxLength": 250 },
+        "corporateEmail": { "type": "string", "maxLength": 160 },
+        "businessHours": { "type": "string", "maxLength": 160 },
+        "bankName": { "type": "string", "maxLength": 120 },
+        "iban": { "type": "string", "maxLength": 80 },
+        "multicaixaExpressNumber": { "type": "string", "maxLength": 40 },
+        "unitelMoneyNumber": { "type": "string", "maxLength": 40 },
+        "afrimoneyNumber": { "type": "string", "maxLength": 40 },
+        "smtpHost": { "type": "string", "maxLength": 120 },
+        "smtpPort": { "type": "string", "maxLength": 20 },
+        "smtpSenderEmail": { "type": "string", "maxLength": 160 },
+        "smtpSenderName": { "type": "string", "maxLength": 120 },
+        "registrarApiProvider": { "type": "string", "maxLength": 80 },
+        "registrarApiConfigured": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "phoneWhatsapp", "address", "corporateEmail", "businessHours", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Customer and administrator accounts isolated per user."
+    },
+    "/catalog_items/{itemId}": {
+      "schema": { "$ref": "#/entities/CatalogItem" },
+      "description": "Publicly readable catalog of websites, domains, hosting, software licenses, and IT assistance."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Customer orders and payment proofs."
+    },
+    "/website_projects/{projectId}": {
+      "schema": { "$ref": "#/entities/WebsiteProject" },
+      "description": "Website quote requests and real-time website development tracking."
+    },
+    "/licenses_issued/{licenseId}": {
+      "schema": { "$ref": "#/entities/LicenseIssued" },
+      "description": "Private software licenses and activation keys restricted strictly to the assigned user or admin."
+    },
+    "/domains_registered/{domainId}": {
+      "schema": { "$ref": "#/entities/DomainRegistered" },
+      "description": "Registered domains and renewal dates restricted to owner or admin."
+    },
+    "/support_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/SupportMessage" },
+      "description": "24/7 support chat and ticket messages."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationRecord" },
+      "description": "Automated email and platform notifications."
+    },
+    "/feedbacks/{feedbackId}": {
+      "schema": { "$ref": "#/entities/FeedbackEntry" },
+      "description": "Customer reviews and service ratings."
+    },
+    "/platform_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/PlatformSetting" },
+      "description": "Platform configuration and payment details."
+    }
+  }
+}

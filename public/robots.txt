@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /cliente
+
+Sitemap: https://muatxissombo.ao/sitemap.xml
