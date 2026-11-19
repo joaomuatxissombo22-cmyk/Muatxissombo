@@ -99,10 +99,54 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Confiar nos cabeçalhos do proxy reverso (Cloud Run, Hostinger LiteSpeed/Nginx, Cloudflare)
+  app.set('trust proxy', true);
+
+  // Redirecionamento permanente HTTP -> HTTPS (301) e prevenção de Conteúdo Misto (Mixed Content)
+  app.use((req, res, next) => {
+    const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
+    const hostname = rawHost.split(':')[0].toLowerCase();
+    const isLocalhost =
+      !hostname ||
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname.endsWith('.local');
+
+    // Ignorar healthcheck interno e ambiente local
+    if (!isLocalhost && req.path !== '/api/health') {
+      const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+        .split(',')[0]
+        .trim()
+        .toLowerCase();
+      const forwardedSsl = String(req.headers['x-forwarded-ssl'] || '')
+        .trim()
+        .toLowerCase();
+      const cfVisitor = String(req.headers['cf-visitor'] || '');
+      const isHttpFromProxy =
+        forwardedProto === 'http' ||
+        forwardedSsl === 'off' ||
+        cfVisitor.includes('"scheme":"http"');
+
+      if (isHttpFromProxy) {
+        return res.redirect(301, `https://${rawHost}${req.originalUrl}`);
+      }
+    }
+
+    // Cabeçalhos de segurança para evitar bloqueio de conteúdo misto (ecrã branco) e forçar HTTPS
+    if (!isLocalhost) {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+      res.setHeader('Content-Security-Policy', 'upgrade-insecure-requests');
+    }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+
   app.use(express.json({ limit: '5mb' }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', httpsEnforced: true });
   });
 
   app.post('/api/auth/register', (req, res) => {
@@ -582,7 +626,7 @@ async function startServer() {
   } else {
     const vitePromise = createViteServer({
       root: ROOT_DIR,
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: true },
       appType: 'spa',
     });
 
