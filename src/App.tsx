@@ -86,6 +86,7 @@ import {
   NotificationItemRecord,
 } from './components/ClientDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
+import { TestimonialsCarousel } from './components/TestimonialsCarousel';
 
 interface CartItem {
   id: string;
@@ -261,6 +262,40 @@ export default function App() {
       return '/src/assets/images/product_m365_personal_family_1795099172472.jpg';
     }
     return '/src/assets/images/service_software_boxes_1795098510071.jpg';
+  };
+
+  const getAssistanceImage = (ast: CatalogItemData): string => {
+    if (ast.imageUrl) return ast.imageUrl;
+    const key = `${ast.id} ${ast.name}`.toLowerCase();
+    if (key.includes('windows')) return '/src/assets/images/assist_windows_install_1795099778769.jpg';
+    if (key.includes('formatacao') || key.includes('formatação') || key.includes('salvaguarda')) {
+      return '/src/assets/images/assist_backup_format_1795099780958.jpg';
+    }
+    if (key.includes('driver') || key.includes('impressora') || key.includes('scanner')) {
+      return '/src/assets/images/assist_drivers_printers_1795099780189.jpg';
+    }
+    if (key.includes('programa') || key.includes('utilitário') || key.includes('utilitarios')) {
+      return '/src/assets/images/assist_pro_software_1795099783215.jpg';
+    }
+    if (key.includes('office') || key.includes('onedrive')) {
+      return '/src/assets/images/assist_office_onedrive_1795099783004.jpg';
+    }
+    if (key.includes('antivirus') || key.includes('antivírus') || key.includes('malware')) {
+      return '/src/assets/images/assist_antivirus_removal_1795099782962.jpg';
+    }
+    if (key.includes('otimizacao') || key.includes('otimização') || key.includes('lentos')) {
+      return '/src/assets/images/assist_pc_optimization_1795099784582.jpg';
+    }
+    if (key.includes('preventiva') || key.includes('parque')) {
+      return '/src/assets/images/service_it_workstation_1795098510449.jpg';
+    }
+    if (key.includes('email') || key.includes('e-mail') || key.includes('outlook')) {
+      return '/src/assets/images/assist_corporate_email_1795099783579.jpg';
+    }
+    if (key.includes('remota') || key.includes('anydesk') || key.includes('teamviewer')) {
+      return '/src/assets/images/assist_remote_support_1795099784252.jpg';
+    }
+    return '/src/assets/images/service_it_workstation_1795098510449.jpg';
   };
 
   const showToast = (msg: string) => {
@@ -2724,14 +2759,14 @@ export default function App() {
                   className="group bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col justify-between transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-lg hover:border-[#0B5ED7]"
                 >
                   <div>
-                    <div className="relative h-36 bg-[#0A192F] overflow-hidden">
+                    <div className="relative h-44 bg-[#0A192F] overflow-hidden">
                       <img
-                        src="/src/assets/images/service_it_workstation_1795098510449.jpg"
+                        src={getAssistanceImage(ast)}
                         alt={ast.name}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#071426]/85 via-[#071426]/20 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#071426]/85 via-[#071426]/15 to-transparent" />
                       <div className="absolute bottom-2.5 left-4 right-4 flex items-center justify-between text-xs text-white">
                         <span className="text-[#28A9E0] font-medium">{ast.subCategory}</span>
                         <Wrench className="w-3.5 h-3.5 text-slate-200" />
@@ -2772,67 +2807,20 @@ export default function App() {
             </div>
           </section>
 
-          {/* 7. PORTAL EXCLUSIVO DE FEEDBACKS E AVALIAÇÕES DE QUALIDADE */}
+          {/* 7. PORTAL EXCLUSIVO DE FEEDBACKS & CARROSSEL ROTATIVO DE TESTEMUNHOS */}
           <section className="py-16 px-4 lg:px-8 bg-white border-t border-slate-200">
-            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
-              <div className="lg:col-span-7 space-y-6">
+            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+              <div className="lg:col-span-7 space-y-5">
                 <div>
                   <div className="text-xs font-semibold text-[#0B5ED7]">
-                    06. Portal de Qualidade & Satisfação de Clientes
+                    06. Testemunhos de Clientes & Portal de Qualidade
                   </div>
-                  <h2 className="text-2xl font-bold text-slate-900 mt-1">
-                    Avaliações Reais sobre os Serviços da Muatxissombo
+                  <h2 className="text-2xl font-bold text-[#0A192F] mt-1">
+                    O Que Dizem as Empresas e Clientes da Muatxissombo
                   </h2>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {[
-                    ...publicFeedbacks,
-                    {
-                      id: 'ref-1',
-                      userId: 'system',
-                      clientName: 'Dr. Carlos Mendes',
-                      companyName: 'Clínica Vida Plena · Talatona',
-                      serviceCategory: 'Criação de Websites',
-                      rating: 5,
-                      comment:
-                        'O nosso portal clínico ficou moderno, rápido em telemóveis e reduziu as chamadas na receção graças ao formulário de pré-marcação.',
-                      isPublic: true,
-                    },
-                    {
-                      id: 'ref-2',
-                      userId: 'system',
-                      clientName: 'Eng.ª Patrícia Mateus',
-                      companyName: 'Kuanza Sul Construções Lda.',
-                      serviceCategory: 'Licenças Microsoft 365 & Domínio .co.ao',
-                      rating: 5,
-                      comment:
-                        'Registo do domínio .co.ao, configuração de e-mails corporativos e entrega das licenças Microsoft 365 Business Standard em menos de 24 horas.',
-                      isPublic: true,
-                    },
-                  ]
-                    .slice(0, 4)
-                    .map((fb) => (
-                      <div
-                        key={fb.id}
-                        className="border border-slate-200 rounded-xl p-5 bg-slate-50/50 space-y-2.5 transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
-                      >
-                        <div className="flex items-center justify-between text-xs text-slate-500">
-                          <span>{fb.serviceCategory}</span>
-                          <span className="font-mono-tabular font-semibold text-amber-600">
-                            {fb.rating}.0 / 5.0 Estrelas
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-700 leading-relaxed">“{fb.comment}”</p>
-                        <div className="text-xs font-bold text-slate-900 pt-1">
-                          {fb.clientName}{' '}
-                          <span className="font-normal text-slate-500">
-                            · {fb.companyName || 'Cliente Verificado'}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
+                <TestimonialsCarousel publicFeedbacks={publicFeedbacks} />
               </div>
 
               {/* Submit Feedback Box */}

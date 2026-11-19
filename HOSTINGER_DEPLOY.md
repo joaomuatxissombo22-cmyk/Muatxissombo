@@ -17,7 +17,22 @@ Este documento reúne todas as instruções técnicas para operação e publica�
 
 ---
 
-## 2. Compilação e Publicação na Hostinger
+## 2. Publicação como Aplicação Node.js na Hostinger (Recomendado)
+1. No **hPanel da Hostinger** (Gestor de Aplicações Node.js / Git Deploy):
+   - **Versão do Node.js**: `22.x` (ou `24.x`, se disponível no painel).
+   - **Ficheiro de Entrada (Entry File)**: `server.js` (ou `server.ts`).
+   - **Comando de Build**: `npm run build`
+   - **Comando de Arranque (Start)**: `npm start`
+2. Variáveis de ambiente no painel da Hostinger:
+   - `NODE_ENV=production`
+   - `SMTP_HOST=smtp.hostinger.com`
+   - `SMTP_PORT=465`
+   - `SMTP_USER=info@muatxissombosolution.online`
+   - `SMTP_PASS=<definido-no-painel-seguro>`
+
+---
+
+## 3. Compilação e Publicação em Alojamento Partilhado (Estático + PHP)
 1. Execute o comando de compilação para produção:
    ```bash
    npm run build
@@ -31,15 +46,15 @@ Este documento reúne todas as instruções técnicas para operação e publica�
 
 ---
 
-## 3. Configuração do Servidor de E-mail Corporativo (SMTP / PHPMailer)
-1. No **hPanel da Hostinger** → **E-mails**, crie a conta corporativa (ex.: `suporte@muatxissombo.ao` ou `comercial@muatxissombo.ao`).
+## 4. Configuração do Servidor de E-mail Corporativo (SMTP / PHPMailer)
+1. No **hPanel da Hostinger** → **E-mails**, crie ou utilize a conta corporativa `info@muatxissombosolution.online`.
 2. Configure os parâmetros SMTP no ficheiro `.env`:
    - `SMTP_HOST="smtp.hostinger.com"`
    - `SMTP_PORT="465"` (SSL/TLS)
-   - `SMTP_USER="suporte@muatxissombo.ao"`
+   - `SMTP_USER="info@muatxissombosolution.online"`
    - `SMTP_PASS="<definido-no-painel-seguro>"`
    - `SMTP_FROM_NAME="Muatxissombo Soluções Digitais"`
-3. Na Hostinger, instale o PHPMailer via SSH ou Composer (`composer require phpmailer/phpmailer`).
+3. Na Hostinger (modo PHP partilhado), instale o PHPMailer via SSH ou Composer (`composer require phpmailer/phpmailer`).
 
 ---
 
